@@ -1,0 +1,33 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "friedchickencostapp",
+          "appId": "1:38231863409:android:94f3885a2e98013c1b6bd0",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "friedchickencostapp",
+          "configurations": {
+            "android": "1:38231863409:android:94f3885a2e98013c1b6bd0",
+            "web": "1:38231863409:web:ba1ca81bef16a4281b6bd0"
+          }
+        }
+      }
+    }
+  },
+  "hosting": {
+    "source": ".",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "frameworksBackend": {
+      "region": "europe-west1"
+    }
+  }
+}

@@ -1,0 +1,3773 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+The content has been processed where comments have been removed, empty lines have been removed, content has been compressed (code blocks are separated by ⋮---- delimiter).
+
+================================================================
+File Summary
+================================================================
+
+Purpose:
+--------
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+
+File Format:
+------------
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+4. Multiple file entries, each consisting of:
+  a. A separator line (================)
+  b. The file path (File: path/to/file)
+  c. Another separator line
+  d. The full contents of the file
+  e. A blank line
+
+Usage Guidelines:
+-----------------
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+
+Notes:
+------
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Code comments have been removed from supported file types
+- Empty lines have been removed from all files
+- Content has been compressed - code blocks are separated by ⋮---- delimiter
+- Files are sorted by Git change count (files with more changes are at the bottom)
+
+Additional Info:
+----------------
+
+================================================================
+Directory Structure
+================================================================
+analysis_page.dart
+app_drawer.dart
+app.dart
+auth_gate.dart
+bottom_navigation.dart
+currency_formatter.dart
+dashboard_page.dart
+firebase_options.dart
+ingredient_page.dart
+inventory_page.dart
+login_page.dart
+main.dart
+metric_card.dart
+sales_page.dart
+sidebar.dart
+utils.dart
+
+================================================================
+Files
+================================================================
+
+================
+File: analysis_page.dart
+================
+import 'dart:math';
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:frier_cost/metric_card.dart';
+import 'currency_formatter.dart';
+import 'utils.dart';
+class AnalysisPage extends StatefulWidget {
+  const AnalysisPage({super.key});
+  @override
+  _AnalysisPageState createState() => _AnalysisPageState();
+}
+class _AnalysisPageState extends State {
+  DateTimeRange selectedRange = DateTimeRange(
+    start: DateTime.now().subtract(Duration(days: 7)),
+    end: DateTime.now(),
+  );
+  List metrics = [];
+  Map<String, UsageData> usageData = {};
+  Map<String, WasteData> wasteData = {};
+  List recommendations = [];
+  bool isLoading = false;
+  final int pageSize = 50;
+  int currentPage = 1;
+  Map<String, double> ingredientsMap = {};
+  @override
+  void initState() {
+    super.initState();
+    fetchData();
+  }
+  Future fetchData({bool loadMore = false}) async {
+    setState(() {
+      isLoading = true;
+    });
+    var start = Timestamp.fromDate(selectedRange.start);
+    var end = Timestamp.fromDate(
+      selectedRange.end.add(Duration(days: 1)).subtract(Duration(seconds: 1)),
+    );
+    var salesQuery = FirebaseFirestore.instance
+        .collection('sales')
+        .where('date', isGreaterThanOrEqualTo: start)
+        .where('date', isLessThanOrEqualTo: end)
+        .orderBy('date')
+        .limit(pageSize * currentPage);
+    var invLogsQuery = FirebaseFirestore.instance
+        .collection('inventory_logs')
+        .where('date', isGreaterThanOrEqualTo: start)
+        .where('date', isLessThanOrEqualTo: end)
+        .limit(pageSize * currentPage);
+    var salesSnapshot = await salesQuery.get();
+    var invLogsSnapshot = await invLogsQuery.get();
+    var ingredientsSnapshot =
+        await FirebaseFirestore.instance.collection('ingredients').get();
+    var recipeSnapshot =
+        await FirebaseFirestore.instance.collection('recipe_standards').get();
+    ingredientsMap = <String, double>{
+      for (var doc in ingredientsSnapshot.docs)
+        doc['item'] as String:
+            doc['unitCost'] is int
+                ? (doc['unitCost'] as int).toDouble()
+                : double.parse(doc['unitCost'].toString()),
+    };
+    var recipeMap = <String, double>{
+      for (var doc in recipeSnapshot.docs)
+        doc['item'] as String:
+            doc['quantityPerPiece'] is int
+                ? (doc['quantityPerPiece'] as int).toDouble()
+                : double.parse(doc['quantityPerPiece'].toString()),
+    };
+    var invLogsByDate = {};
+    for (var doc in invLogsSnapshot.docs) {
+      var data = doc.data();
+      var date = (data['date'] as Timestamp).toDate().toString().substring(
+        0,
+        10,
+      );
+      invLogsByDate[date] = invLogsByDate[date] ?? [];
+      invLogsByDate[date].add(data);
+    }
+    List<DailyMetrics> metricsList = [];
+    Map<String, double> totalConsumed = {};
+    Map<String, double> totalDiscarded = {};
+    for (var salesDoc in salesSnapshot.docs) {
+      var salesData = salesDoc.data();
+      var date = (salesData['date'] as Timestamp).toDate().toString().substring(
+        0,
+        10,
+      );
+      var piecesSold = salesData['piecesSold'];
+      var totalRevenue =
+          salesData['totalRevenue'] is int
+              ? salesData['totalRevenue'].toDouble()
+              : double.parse(salesData['totalRevenue'].toString());
+      if (invLogsByDate.containsKey(date)) {
+        var logs = invLogsByDate[date];
+        double totalCost = 0;
+        for (var log in logs) {
+          var item = log['item'];
+          var opening = log['opening'];
+          var received = log['received'];
+          var closing = log['closing'];
+          var discarded = log['discarded'];
+          var consumed = opening + received - closing - discarded;
+          var unitCost = ingredientsMap[item] ?? 0;
+          totalCost += consumed * unitCost;
+          totalConsumed[item] = (totalConsumed[item] ?? 0) + consumed;
+          totalDiscarded[item] = (totalDiscarded[item] ?? 0) + discarded;
+        }
+        var costPerPiece = piecesSold > 0 ? totalCost / piecesSold : 0.0;
+        var sellingPricePerPiece =
+            piecesSold > 0 ? totalRevenue / piecesSold : 0.0;
+        var marginPerPiece = sellingPricePerPiece - costPerPiece;
+        metricsList.add(
+          DailyMetrics(
+            date: (salesData['date'] as Timestamp).toDate(),
+            costPerPiece: costPerPiece,
+            marginPerPiece: marginPerPiece,
+            totalCost: totalCost,
+            totalRevenue: totalRevenue,
+            piecesSold: piecesSold,
+          ),
+        );
+      }
+    }
+    Map<String, UsageData> usage = {};
+    for (var entry in totalConsumed.entries) {
+      var item = entry.key;
+      var consumed = entry.value;
+      var piecesSold = metricsList.fold(0, (sum, m) => sum + m.piecesSold);
+      var usagePerPiece = piecesSold > 0 ? consumed / piecesSold : 0.0;
+      var benchmark = recipeMap[item] ?? 0;
+      var deviation = benchmark > 0 ? (usagePerPiece / benchmark) - 1 : 0.0;
+      usage[item] = UsageData(
+        usagePerPiece: usagePerPiece,
+        benchmark: benchmark,
+        deviation: deviation,
+      );
+    }
+    Map<String, WasteData> waste = {};
+    for (var entry in totalDiscarded.entries) {
+      var item = entry.key;
+      var discarded = entry.value;
+      var received = invLogsByDate.values
+          .expand((logs) => logs)
+          .where((log) => log['item'] == item)
+          .fold(0.0, (sum, log) => sum + log['received']);
+      var wastePercentage = received > 0 ? discarded / received : 0.0;
+      var wasteCost = discarded * (ingredientsMap[item] ?? 0);
+      waste[item] = WasteData(
+        quantity: discarded,
+        cost: wasteCost,
+        percentage: wastePercentage,
+      );
+    }
+    List<Map<String, dynamic>> logs =
+        invLogsByDate.values
+            .expand((logs) => logs)
+            .toList()
+            .cast<Map<String, dynamic>>();
+    var recs = memoizedGenerateRecommendations(
+      inventoryLogs: logs,
+      usagePerPiece: usage,
+      consumed: totalConsumed,
+      ingredientCosts: ingredientsMap,
+      recipeStandards: recipeMap,
+      totalCost: metricsList.fold(0, (sum, m) => sum + m.totalCost.toInt()),
+      avgDailySales:
+          metricsList.isNotEmpty
+              ? metricsList.fold(0, (sum, m) => sum + m.piecesSold) /
+                  metricsList.length
+              : 0,
+    );
+    setState(() {
+      metrics = metricsList;
+      usageData = usage;
+      wasteData = waste;
+      recommendations = recs;
+      isLoading = false;
+      if (loadMore) currentPage++;
+    });
+  }
+  @override
+  Widget build(BuildContext context) {
+    double totalCosts = metrics.fold(0, (sum, m) => sum + m.totalCost);
+    double totalRevenue = metrics.fold(0, (sum, m) => sum + m.totalRevenue);
+    int totalPiecesSold = metrics.fold(
+      0,
+      (sum, m) => (sum + m.piecesSold).toInt(),
+    );
+    double avgCostPerPiece =
+        totalPiecesSold > 0 ? totalCosts / totalPiecesSold : 0;
+    double avgMarginPerPiece =
+        totalPiecesSold > 0 ? (totalRevenue - totalCosts) / totalPiecesSold : 0;
+    double grossMarginPercent =
+        totalRevenue > 0
+            ? (avgMarginPerPiece * totalPiecesSold / totalRevenue) * 100
+            : 0;
+    return Scaffold(
+      appBar: AppBar(title: Text('Analysis')),
+      body: SingleChildScrollView(
+        padding: EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Date Range: ${selectedRange.start.toString().substring(0, 10)} - ${selectedRange.end.toString().substring(0, 10)}',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                IconButton(
+                  icon: Icon(Icons.calendar_today),
+                  onPressed: () async {
+                    var newRange = await showDateRangePicker(
+                      context: context,
+                      firstDate: DateTime(2000),
+                      lastDate: DateTime(2100),
+                      initialDateRange: selectedRange,
+                    );
+                    if (newRange != null) {
+                      setState(() {
+                        selectedRange = newRange;
+                        currentPage = 1;
+                      });
+                      fetchData();
+                    }
+                  },
+                ),
+              ],
+            ),
+            SizedBox(height: 20),
+            if (!isLoading && metrics.isNotEmpty)
+              Wrap(
+                    spacing: 12,
+                    runSpacing: 16,
+                    children: [
+                      MetricCard(
+                        title: 'Total Costs',
+                         value: CurrencyFormatter().format(totalCosts),
+                        icon: Icons.money_off,
+                        accentColor: Colors.indigo,
+                        showTrendIndicator: false,
+                      ),
+                      MetricCard(
+                        title: 'Total Revenue',
+                         value: CurrencyFormatter().format(totalRevenue),
+                        icon: Icons.attach_money,
+                        accentColor: Colors.green[700],
+                        showTrendIndicator: false,
+                      ),
+                      MetricCard(
+                        title: 'Avg Cost/Piece',
+                        value: CurrencyFormatter().format(avgCostPerPiece),
+                        icon: Icons.shopping_cart,
+                        accentColor: Colors.orange,
+                        showTrendIndicator: metrics.length > 1,
+                        isPositive:
+                            metrics.length > 1
+                                ? metrics.last.costPerPiece <=
+                                    metrics.first.costPerPiece
+                                : true,
+                      ),
+                      MetricCard(
+                        title: 'Gross Margin',
+                        value: '${grossMarginPercent.toStringAsFixed(1)}%',
+                        icon: Icons.trending_up,
+                        accentColor:
+                            grossMarginPercent >= 30
+                                ? Colors.green[700]
+                                : grossMarginPercent >= 20
+                                ? Colors.amber[700]
+                                : Colors.red[700],
+                        showTrendIndicator: metrics.length > 1,
+                        isPositive:
+                            metrics.length > 1
+                                ? metrics.last.marginPerPiece >=
+                                    metrics.first.marginPerPiece
+                                : true,
+                      ),
+                      MetricCard(
+                        title: 'Pieces Sold',
+                        value: '$totalPiecesSold',
+                        icon: Icons.inventory_2,
+                        accentColor: Colors.blue,
+                        showTrendIndicator: metrics.length > 1,
+                        isPositive:
+                            metrics.length > 1
+                                ? metrics.last.piecesSold >=
+                                    metrics.first.piecesSold
+                                : true,
+                      ),
+                      MetricCard(
+                        title: 'Avg Margin/Piece',
+                        value: avgMarginPerPiece.toUgx(),
+                        icon: Icons.trending_up,
+                        accentColor: Colors.teal,
+                        showTrendIndicator: metrics.length > 1,
+                        isPositive:
+                            metrics.length > 1
+                                ? metrics.last.marginPerPiece >=
+                                    metrics.first.marginPerPiece
+                                : true,
+                      ),
+                    ],
+                  )
+                  .animate()
+                  .fadeIn(duration: 400.ms)
+                  .slideY(
+                    begin: 0.1,
+                    end: 0,
+                    duration: 500.ms,
+                    curve: Curves.easeOutQuad,
+                  ),
+            SizedBox(height: 20),
+            if (!isLoading && metrics.isNotEmpty)
+              Card(
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Cost Breakdown by Ingredient',
+                                style: Theme.of(context).textTheme.titleLarge
+                                    ?.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                              Tooltip(
+                                message:
+                                    'Shows the percentage of total cost contributed by each ingredient',
+                                child: Icon(
+                                  Icons.info_outline,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Divider(height: 24),
+                          SizedBox(
+                            height: 320,
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  flex: 3,
+                                  child: Semantics(
+                                    label:
+                                        'Pie chart showing cost breakdown by ingredient',
+                                    child: PieChart(
+                                      PieChartData(
+                                        sectionsSpace: 2,
+                                        centerSpaceRadius: 40,
+                                        sections: _buildPieChartSections(),
+                                        pieTouchData: PieTouchData(
+                                          touchCallback: (
+                                            FlTouchEvent event,
+                                            pieTouchResponse,
+                                          ) {
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(left: 16.0),
+                                    child: _buildLegend(),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          _buildCostInsights(),
+                        ],
+                      ),
+                    ),
+                  )
+                  .animate()
+                  .fadeIn(duration: 400.ms)
+                  .slideY(
+                    begin: 0.2,
+                    end: 0,
+                    duration: 500.ms,
+                    curve: Curves.easeOutQuad,
+                  ),
+            SizedBox(height: 20),
+            if (!isLoading && metrics.isNotEmpty)
+              Column(
+                children: [
+                  Text(
+                    'Usage per Piece',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  SizedBox(height: 10),
+                  DataTable(
+                    columns: [
+                      DataColumn(label: Text('Ingredient')),
+                      DataColumn(label: Text('Usage/Piece')),
+                      DataColumn(label: Text('Benchmark')),
+                      DataColumn(label: Text('Deviation')),
+                    ],
+                    rows:
+                        usageData.entries.map((e) {
+                          return DataRow(
+                            cells: [
+                              DataCell(Text(e.key)),
+                              DataCell(
+                                Text(e.value.usagePerPiece.toStringAsFixed(4)),
+                              ),
+                              DataCell(
+                                Text(e.value.benchmark.toStringAsFixed(4)),
+                              ),
+                              DataCell(
+                                Text(
+                                  '${(e.value.deviation * 100).toStringAsFixed(1)}%',
+                                  style: TextStyle(
+                                    color:
+                                        e.value.deviation > 0.1
+                                            ? Colors.red[700]
+                                            : Colors.green[700],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        }).toList(),
+                  ),
+                ],
+              ).animate().fadeIn(duration: 300.ms),
+            SizedBox(height: 20),
+            if (!isLoading && metrics.isNotEmpty)
+              Column(
+                children: [
+                  Text(
+                    'Waste Analysis',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  SizedBox(height: 10),
+                  DataTable(
+                    columns: [
+                      DataColumn(label: Text('Ingredient')),
+                      DataColumn(label: Text('Quantity')),
+                      DataColumn(label: Text('Cost')),
+                      DataColumn(label: Text('Percentage')),
+                    ],
+                    rows:
+                        wasteData.entries.map((e) {
+                          return DataRow(
+                            cells: [
+                              DataCell(Text(e.key)),
+                              DataCell(
+                                Text(e.value.quantity.toStringAsFixed(1)),
+                              ),
+                              DataCell(Text(e.value.cost.toUgx())),
+                              DataCell(
+                                Text(
+                                  '${(e.value.percentage * 100).toStringAsFixed(1)}%',
+                                ),
+                              ),
+                            ],
+                          );
+                        }).toList(),
+                  ),
+                ],
+              ).animate().fadeIn(duration: 300.ms),
+            SizedBox(height: 20),
+            if (!isLoading && recommendations.isNotEmpty)
+              Column(
+                children: [
+                  Text(
+                    'Recommendations',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  SizedBox(height: 10),
+                  ...recommendations.map(
+                    (rec) => Card(
+                      elevation: 2,
+                      child: ListTile(
+                        title: Text(rec.title),
+                        subtitle: Text(
+                          'Details: ${rec.details}\nSavings: ${rec.savings.toStringAsFixed(2)}/month\nDifficulty: ${rec.difficulty}',
+                        ),
+                        trailing: ElevatedButton(
+                          onPressed: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('${rec.title} action initiated'),
+                              ),
+                            );
+                          },
+                          child: Text('Implement'),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ).animate().fadeIn(duration: 300.ms),
+            if (!isLoading && metrics.length >= pageSize * currentPage)
+              ElevatedButton(
+                onPressed: () => fetchData(loadMore: true),
+                child: Text('Load More'),
+              ),
+            if (isLoading)
+              ShimmerWidget(
+                child: Column(
+                  children: [
+                    Container(height: 300, color: Colors.grey[300]),
+                    SizedBox(height: 20),
+                    Container(height: 100, color: Colors.grey[300]),
+                  ],
+                ),
+              ),
+            if (!isLoading && metrics.isEmpty)
+              Center(child: Text('No data for the selected period')),
+          ],
+        ),
+      ),
+    );
+  }
+  List<PieChartSectionData> _buildPieChartSections() {
+    double totalCost = usageData.entries.fold(0.0, (sum, entry) {
+      return sum +
+          entry.value.usagePerPiece *
+              metrics.fold(0, (sum, m) => sum + m.piecesSold) *
+              (ingredientsMap[entry.key] ?? 0);
+    });
+    return usageData.entries.map((entry) {
+      String item = entry.key;
+      double cost =
+          entry.value.usagePerPiece *
+          metrics.fold(0, (sum, m) => sum + m.piecesSold) *
+          (ingredientsMap[item] ?? 0);
+      double percentage = (cost / totalCost) * 100;
+      Color sectionColor =
+          Colors.primaries[usageData.keys.toList().indexOf(item) %
+              Colors.primaries.length];
+      return PieChartSectionData(
+        value: cost,
+        title: percentage >= 5 ? '${percentage.toStringAsFixed(1)}%' : '',
+        titleStyle: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+          shadows: [Shadow(color: Colors.black, blurRadius: 2)],
+        ),
+        radius: 100,
+        color: sectionColor,
+        badgeWidget:
+            percentage < 5
+                ? null
+                : badge(sectionColor: sectionColor, percentage: percentage),
+        badgePositionPercentageOffset: 0.98,
+      );
+    }).toList();
+  }
+  Widget badge({required Color sectionColor, required double percentage}) {
+    return AnimatedContainer(
+      duration: Duration(milliseconds: 300),
+      decoration: BoxDecoration(
+        color: sectionColor,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: [
+          BoxShadow(color: Colors.black26, blurRadius: 3, offset: Offset(0, 1)),
+        ],
+      ),
+      padding: EdgeInsets.all(5),
+      child: Center(
+        child: Text(
+          '${percentage.toStringAsFixed(0)}%',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    ).animate().scale(
+      delay: 300.ms,
+      duration: 600.ms,
+      curve: Curves.elasticOut,
+    );
+  }
+  Widget _buildLegend() {
+    List<MapEntry<String, UsageData>> sortedEntries =
+        usageData.entries.toList()..sort((a, b) {
+          double costA =
+              a.value.usagePerPiece *
+              metrics.fold(0, (total, m) => total + m.piecesSold) *
+              (ingredientsMap[a.key] ?? 0);
+          double costB =
+              b.value.usagePerPiece *
+              metrics.fold(0, (total, m) => total + m.piecesSold) *
+              (ingredientsMap[b.key] ?? 0);
+          return costB.compareTo(costA); // Sort descending
+        });
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Ingredients by Cost',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        SizedBox(height: 12),
+        Expanded(
+          child: ListView.builder(
+            itemCount: min(sortedEntries.length, 10),
+            itemBuilder: (context, index) {
+              String item = sortedEntries[index].key;
+              double cost =
+                  sortedEntries[index].value.usagePerPiece *
+                  metrics.fold(0, (sum, m) => sum + m.piecesSold) *
+                  (ingredientsMap[item] ?? 0);
+              Color itemColor =
+                  Colors.primaries[usageData.keys.toList().indexOf(item) %
+                      Colors.primaries.length];
+              return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4.0),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: itemColor,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            item,
+                            style: TextStyle(fontSize: 13),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Text(
+  CurrencyFormatter().format(cost),
+  style: TextStyle(fontWeight: FontWeight.bold),
+),
+                      ],
+                    ),
+                  )
+                  .animate()
+                  .fadeIn(
+                    delay: Duration(milliseconds: 100 * index),
+                    duration: 300.ms,
+                  )
+                  .slideX(
+                    begin: 0.2,
+                    end: 0,
+                    delay: Duration(milliseconds: 100 * index),
+                    duration: 300.ms,
+                  );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+  Widget _buildCostInsights() {
+    String? topIngredient;
+    double topCost = 0;
+    String? highestDeviationIngredient;
+    double highestDeviation = 0;
+    for (var entry in usageData.entries) {
+      String item = entry.key;
+      double cost =
+          entry.value.usagePerPiece *
+          metrics.fold(0, (sum, m) => sum + m.piecesSold) *
+          (ingredientsMap[item] ?? 0);
+      if (cost > topCost) {
+        topCost = cost;
+        topIngredient = item;
+      }
+      if (entry.value.deviation.abs() > highestDeviation) {
+        highestDeviation = entry.value.deviation.abs();
+        highestDeviationIngredient = item;
+      }
+    }
+    return Container(
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Insights',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _insightCard(
+                  context: context,
+                  icon: Icons.trending_up,
+                  title: 'Top Cost Driver',
+                  subtitle: topIngredient ?? 'N/A',
+                      value: topCost > 0 ? topCost.toUgx() : 'N/A',
+                ),
+              ),
+              SizedBox(width: 16),
+              Expanded(
+                child: _insightCard(
+                  context: context,
+                  icon: Icons.compare_arrows,
+                  title: 'Highest Deviation',
+                  subtitle: highestDeviationIngredient ?? 'N/A',
+                  value:
+                      highestDeviation > 0
+                          ? '${(highestDeviation * 100).toStringAsFixed(1)}%'
+                          : 'N/A',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ).animate().fadeIn(delay: 600.ms, duration: 400.ms);
+  }
+  Widget _insightCard({
+    required BuildContext context,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required String value,
+  }) {
+    return Container(
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 2,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              SizedBox(width: 8),
+              Text(
+                title,
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          SizedBox(height: 8),
+          Text(subtitle, style: TextStyle(fontSize: 12)),
+          SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+class DailyMetrics {
+  DateTime date;
+  double costPerPiece;
+  double marginPerPiece;
+  double totalCost;
+  double totalRevenue;
+  int piecesSold;
+  DailyMetrics({
+    required this.date,
+    required this.costPerPiece,
+    required this.marginPerPiece,
+    required this.totalCost,
+    required this.totalRevenue,
+    required this.piecesSold,
+  });
+}
+class WasteData {
+  double quantity;
+  double cost;
+  double percentage;
+  WasteData({
+    required this.quantity,
+    required this.cost,
+    required this.percentage,
+  });
+}
+class Recommendation {
+  String title;
+  String details;
+  double savings;
+  String difficulty;
+  Recommendation({
+    required this.title,
+    required this.details,
+    required this.savings,
+    required this.difficulty,
+  });
+}
+
+================
+File: app_drawer.dart
+================
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+class AppDrawer extends StatelessWidget {
+  const AppDrawer({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return Drawer(
+      child: ListView(
+        children: [
+          DrawerHeader(child: Text('Menu', style: TextStyle(fontSize: 24))),
+          ListTile(
+            title: Text('Dashboard'),
+            onTap: () => Navigator.pushReplacementNamed(context, '/dashboard'),
+          ),
+          ListTile(
+            title: Text('Inventory'),
+            onTap: () => Navigator.pushNamed(context, '/inventory'),
+          ),
+          ListTile(
+            title: Text('Ingredients'),
+            onTap: () => Navigator.pushNamed(context, '/ingredients'),
+          ),
+          ListTile(
+            title: Text('Sales'),
+            onTap: () => Navigator.pushNamed(context, '/sales'),
+          ),
+          ListTile(
+            title: Text('Analysis'),
+            onTap: () => Navigator.pushNamed(context, '/analysis'),
+          ),
+          ListTile(
+            title: Text('Logout'),
+            onTap: () async {
+              await FirebaseAuth.instance.signOut();
+              Navigator.pop(context);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+================
+File: app.dart
+================
+import 'package:flutter/material.dart';
+import 'package:responsive_framework/responsive_framework.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'analysis_page.dart';
+import 'dashboard_page.dart';
+import 'ingredient_page.dart';
+import 'inventory_page.dart';
+import 'sales_page.dart';
+import 'auth_gate.dart';
+class FriedChickenCostApp extends StatelessWidget {
+  const FriedChickenCostApp({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Fried Chicken Cost Analysis',
+      theme: ThemeData(
+        primaryColor: Color(0xFF2E7D32),
+        colorScheme: ColorScheme.light(
+          primary: Color(0xFF2E7D32),
+          secondary: Color(0xFFF57C00),
+          surface: Colors.white,
+          error: Color(0xFFD32F2F),
+        ),
+        textTheme: GoogleFonts.poppinsTextTheme().copyWith(
+          bodyMedium: GoogleFonts.roboto(color: Color(0xFF212121)),
+          bodySmall: GoogleFonts.roboto(color: Color(0xFF757575)),
+          titleLarge: GoogleFonts.poppins(),
+          headlineSmall: GoogleFonts.poppins(),
+          titleMedium: GoogleFonts.poppins(),
+          labelMedium: GoogleFonts.robotoMono(),
+        ),
+        cardTheme: CardTheme(
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Color(0xFF2E7D32),
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Color(0xFF2E7D32),
+            side: BorderSide(color: Color(0xFF2E7D32)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+        dataTableTheme: DataTableThemeData(
+          headingRowColor: WidgetStateProperty.all(Color(0xFFFAFAFA)),
+          dataRowColor: WidgetStateProperty.resolveWith((states) {
+            return states.contains(WidgetState.selected)
+                ? Color(0xFFFAFAFA)
+                : Colors.white;
+          }),
+        ),
+        navigationBarTheme: NavigationBarThemeData(
+          backgroundColor: Colors.white,
+          indicatorColor: Color(0xFF2E7D32).withOpacity(0.1),
+          labelTextStyle: WidgetStateProperty.all(
+            GoogleFonts.poppins(fontSize: 12, color: Color(0xFF757575)),
+          ),
+          iconTheme: WidgetStateProperty.resolveWith((states) {
+            return IconThemeData(
+              color: states.contains(WidgetState.selected)
+                  ? Color(0xFF2E7D32)
+                  : Color(0xFF757575),
+            );
+          }),
+        ),
+        visualDensity: VisualDensity.adaptivePlatformDensity,
+      ),
+      builder: (context, child) => ResponsiveBreakpoints.builder(
+        child: child!,
+        breakpoints: [
+          Breakpoint(start: 0, end: 600, name: MOBILE),
+          Breakpoint(start: 601, end: 1200, name: TABLET),
+          Breakpoint(start: 1201, end: 1920, name: DESKTOP),
+          Breakpoint(start: 1921, end: double.infinity, name: '4K'),
+        ],
+      ),
+      home: AuthGate(),
+      routes: {
+        '/dashboard': (context) => DashboardPage(),
+        '/inventory': (context) => InventoryPage(),
+        '/sales': (context) => SalesPage(),
+        '/analysis': (context) => AnalysisPage(),
+        '/ingredients': (context) => IngredientPage(),
+        '/settings': (context) => SettingsPage(),
+      },
+    );
+  }
+}
+class SettingsPage extends StatelessWidget {
+  const SettingsPage({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Settings')),
+      body: Center(child: Text('Settings Page')),
+    );
+  }
+}
+
+================
+File: auth_gate.dart
+================
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:responsive_framework/responsive_framework.dart';
+import 'analysis_page.dart';
+import 'app.dart';
+import 'dashboard_page.dart';
+import 'ingredient_page.dart';
+import 'inventory_page.dart';
+import 'login_page.dart';
+import 'sales_page.dart';
+import 'sidebar.dart';
+import 'utils.dart';
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Scaffold(
+            body: Center(
+              child: ShimmerWidget(
+                child: Container(
+                  width: 100,
+                  height: 100,
+                  color: Colors.grey[300],
+                ),
+              ),
+            ),
+          );
+        }
+        if (!snapshot.hasData) {
+          return LoginPage();
+        }
+        final currentRoute = ModalRoute.of(context)?.settings.name ?? '/dashboard';
+        return Scaffold(
+          body: Row(
+            children: [
+              if (!ResponsiveBreakpoints.of(context).smallerThan(TABLET))
+                Sidebar(currentRoute: currentRoute),
+              Expanded(
+                child: Navigator(
+                  onGenerateRoute: (settings) {
+                    Widget page;
+                    switch (settings.name) {
+                      case '/inventory':
+                        page = InventoryPage();
+                        break;
+                      case '/sales':
+                        page = SalesPage();
+                        break;
+                      case '/analysis':
+                        page = AnalysisPage();
+                        break;
+                      case '/ingredients':
+                        page = IngredientPage();
+                        break;
+                      case '/settings':
+                        page = SettingsPage();
+                        break;
+                      default:
+                        page = DashboardPage();
+                    }
+                    return MaterialPageRoute(
+                      builder: (context) => page,
+                      settings: settings,
+                    );
+                  },
+                  initialRoute: currentRoute,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+================
+File: bottom_navigation.dart
+================
+import 'package:flutter/material.dart';
+import 'package:responsive_framework/responsive_framework.dart';
+import 'auth_gate.dart';
+import 'dashboard_page.dart';
+import 'inventory_page.dart';
+import 'sales_page.dart';
+import 'analysis_page.dart';
+import 'ingredient_page.dart';
+class BottomNavigation extends StatefulWidget {
+  const BottomNavigation({super.key});
+  @override
+  _BottomNavigationState createState() => _BottomNavigationState();
+}
+class _BottomNavigationState extends State<BottomNavigation> {
+  int _selectedIndex = 0;
+  final List<Map<String, dynamic>> _pages = [
+    {'route': '/dashboard', 'widget': DashboardPage(), 'label': 'Dashboard', 'icon': Icons.dashboard},
+    {'route': '/inventory', 'widget': InventoryPage(), 'label': 'Inventory', 'icon': Icons.inventory},
+    {'route': '/sales', 'widget': SalesPage(), 'label': 'Sales', 'icon': Icons.sell},
+    {'route': '/analysis', 'widget': AnalysisPage(), 'label': 'Analysis', 'icon': Icons.analytics},
+    {'route': '/ingredients', 'widget': IngredientPage(), 'label': 'Ingredients', 'icon': Icons.food_bank},
+  ];
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+      Navigator.pushReplacementNamed(context, _pages[index]['route']);
+    });
+  }
+  @override
+  Widget build(BuildContext context) {
+    if (!ResponsiveBreakpoints.of(context).smallerThan(TABLET)) {
+      return AuthGate();
+    }
+    return Scaffold(
+      body: AuthGate(),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: _onItemTapped,
+        destinations: _pages
+            .map((page) => NavigationDestination(
+                  icon: Icon(page['icon'], semanticLabel: page['label']),
+                  selectedIcon: Icon(page['icon'], fill: 1.0),
+                  label: page['label'],
+                  tooltip: page['label'],
+                ))
+            .toList(),
+      ),
+    );
+  }
+}
+
+================
+File: currency_formatter.dart
+================
+import 'package:intl/intl.dart';
+class CurrencyFormatter {
+  static final CurrencyFormatter _instance = CurrencyFormatter._internal();
+  late final NumberFormat _ugxFormatter;
+  late final NumberFormat _compactFormatter;
+  factory CurrencyFormatter() {
+    return _instance;
+  }
+  CurrencyFormatter._internal() {
+    _ugxFormatter = NumberFormat.currency(
+      locale: 'en_UG',
+      symbol: 'USh',
+      decimalDigits: 0,
+    );
+    _compactFormatter = NumberFormat.compactCurrency(
+      locale: 'en_UG',
+      symbol: 'USh',
+      decimalDigits: 1,
+    );
+  }
+  String format(num amount) {
+    return _ugxFormatter.format(amount);
+  }
+  String formatWithoutSymbol(num amount) {
+    return NumberFormat('#,###', 'en_UG').format(amount);
+  }
+  String formatCompact(num amount) {
+    return _compactFormatter.format(amount);
+  }
+  String formatWithPrecision(num amount, int decimalDigits) {
+    return NumberFormat.currency(
+      locale: 'en_UG',
+      symbol: 'USh',
+      decimalDigits: decimalDigits,
+    ).format(amount);
+  }
+  num parse(String formattedAmount) {
+    String cleaned = formattedAmount.replaceAll('USh', '').trim();
+    return NumberFormat('#,###', 'en_UG').parse(cleaned);
+  }
+  String formatWithSign(num amount) {
+    return (amount > 0 ? '+' : '') + _ugxFormatter.format(amount);
+  }
+  /// Returns just the currency symbol
+  String get currencySymbol => 'USh';
+}
+extension CurrencyFormatterExtension on num {
+  String toUgx() {
+    return CurrencyFormatter().format(this);
+  }
+  String toUgxCompact() {
+    return CurrencyFormatter().formatCompact(this);
+  }
+}
+
+================
+File: dashboard_page.dart
+================
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:frier_cost/currency_formatter.dart';
+import 'package:frier_cost/metric_card.dart';
+import 'package:responsive_framework/responsive_framework.dart';
+import 'app_drawer.dart';
+import 'utils.dart';
+class DashboardPage extends StatelessWidget {
+  const DashboardPage({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Dashboard')),
+      drawer:
+          ResponsiveBreakpoints.of(context).smallerThan(DESKTOP)
+              ? AppDrawer()
+              : null,
+      body: Row(
+        children: [
+          if (ResponsiveBreakpoints.of(context).largerThan(TABLET)) AppDrawer(),
+          Expanded(
+            child: StreamBuilder(
+              stream:
+                  FirebaseFirestore.instance
+                      .collection('sales')
+                      .orderBy('date', descending: true)
+                      .limit(7)
+                      .snapshots(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return ShimmerWidget(
+                    child: Column(
+                      children: [
+                        Container(height: 100, color: Colors.grey[300]),
+                        SizedBox(height: 20),
+                        Container(height: 300, color: Colors.grey[300]),
+                      ],
+                    ),
+                  );
+                }
+                var salesDocs = snapshot.data!.docs;
+                return StreamBuilder(
+                  stream:
+                      FirebaseFirestore.instance
+                          .collection('inventory_logs')
+                          .where(
+                            'date',
+                            isGreaterThanOrEqualTo: Timestamp.fromDate(
+                              DateTime.now().subtract(Duration(days: 7)),
+                            ),
+                          )
+                          .snapshots(),
+                  builder: (context, invSnapshot) {
+                    if (!invSnapshot.hasData) {
+                      return ShimmerWidget(
+                        child: Column(
+                          children: [
+                            Container(height: 100, color: Colors.grey[300]),
+                            SizedBox(height: 20),
+                            Container(height: 300, color: Colors.grey[300]),
+                          ],
+                        ),
+                      );
+                    }
+                    var invLogs = invSnapshot.data!.docs;
+                    var metrics = _calculateMetrics(salesDocs, invLogs);
+                    var highWaste = _calculateHighWaste(invLogs);
+                    var usageDeviations = _calculateUsageDeviations(
+                      salesDocs,
+                      invLogs,
+                    );
+                    bool costTrend =
+                        metrics.length > 1
+                            ? metrics.last.costPerPiece <=
+                                metrics[metrics.length - 2].costPerPiece
+                            : true;
+                    bool marginTrend =
+                        metrics.length > 1
+                            ? metrics.last.marginPerPiece >=
+                                metrics[metrics.length - 2].marginPerPiece
+                            : true;
+                    var previousDaySales =
+                        salesDocs.length > 1
+                            ? salesDocs[1]['piecesSold'] as int
+                            : 0;
+                    var todaySales =
+                        salesDocs.isNotEmpty
+                            ? salesDocs.first['piecesSold'] as int
+                            : 0;
+                    bool dailySalesTrend = todaySales >= previousDaySales;
+                    return SingleChildScrollView(
+                      padding: EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                                'Today\'s Performance',
+                                style: Theme.of(context).textTheme.headlineSmall
+                                    ?.copyWith(fontWeight: FontWeight.bold),
+                              )
+                              .animate()
+                              .fadeIn(duration: 400.ms)
+                              .slideX(begin: -0.2, end: 0),
+                          SizedBox(height: 16),
+                          Wrap(
+                            spacing: 16,
+                            runSpacing: 16,
+                            children: [
+                              MetricCard(
+                                title: 'Cost/Piece',
+                                value:
+                                    metrics.isNotEmpty
+                                        ? CurrencyFormatter().format(
+                                          metrics.last.costPerPiece,
+                                        )
+                                        : '0.00',
+                                icon: Icons.attach_money_rounded,
+                                accentColor: Colors.amber[700],
+                                isPositive: costTrend,
+                                showTrendIndicator: metrics.length > 1,
+                              ),
+                              MetricCard(
+                                title: 'Margin/Piece',
+                                value:
+                                    metrics.isNotEmpty
+                                        ? CurrencyFormatter().format(
+                                          metrics.last.marginPerPiece,
+                                        )
+                                        : '\$0.00',
+                                icon: Icons.trending_up_rounded,
+                                accentColor: Colors.green[700],
+                                isPositive: marginTrend,
+                                showTrendIndicator: metrics.length > 1,
+                              ),
+                              MetricCard(
+                                title: 'Daily Sales',
+                                value:
+                                    salesDocs.isNotEmpty
+                                        ? '${salesDocs.first['piecesSold']} pieces'
+                                        : '0 pieces',
+                                icon: Icons.shopping_cart_rounded,
+                                accentColor: Colors.blue[700],
+                                isPositive: dailySalesTrend,
+                                showTrendIndicator: salesDocs.length > 1,
+                              ),
+                              MetricCard(
+                                title: 'Weekly Revenue',
+                                value: CurrencyFormatter().format(
+                                  _calculateWeeklyRevenue(metrics),
+                                ),
+                                icon: Icons.account_balance_wallet_rounded,
+                                accentColor: Colors.purple[700],
+                                isPositive: true,
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 32),
+                          if (highWaste.isNotEmpty)
+                            Card(
+                                  elevation: 3,
+                                  color: Color(
+                                    0xFFD32F2F,
+                                  ).withValues(alpha: 0.08),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    side: BorderSide(
+                                      color: Color(0xFFD32F2F).withValues(alpha:  0.3),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Padding(
+                                    padding: EdgeInsets.all(16.0),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.warning_amber_rounded,
+                                              color: Color(0xFFD32F2F),
+                                            ),
+                                            SizedBox(width: 8),
+                                            Text(
+                                              'High Waste Alert',
+                                              style: Theme.of(
+                                                context,
+                                              ).textTheme.titleMedium?.copyWith(
+                                                color: Color(0xFFD32F2F),
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        SizedBox(height: 12),
+                                        ...highWaste.entries.map(
+                                          (e) => Padding(
+                                            padding: const EdgeInsets.only(
+                                              bottom: 8.0,
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.circle,
+                                                  size: 8,
+                                                  color: Color(0xFFD32F2F),
+                                                ),
+                                                SizedBox(width: 8),
+                                                Text(
+                                                  '${e.key}: ${(e.value * 100).toStringAsFixed(1)}% waste',
+                                                  style: TextStyle(
+                                                    fontWeight:
+                                                        e.value > 0.1
+                                                            ? FontWeight.bold
+                                                            : FontWeight.normal,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                                .animate()
+                                .fadeIn(duration: 500.ms)
+                                .scale(begin: Offset(0.95, 0.95)),
+                          SizedBox(height: 24),
+                          if (usageDeviations.isNotEmpty)
+                            Card(
+                                  elevation: 3,
+                                  color: Colors.orange[700]!.withValues(alpha:  0.08),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    side: BorderSide(
+                                      color: Colors.orange[700]!.withValues(alpha:
+                                        0.3,
+                                      ),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Padding(
+                                    padding: EdgeInsets.all(16.0),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.analytics_rounded,
+                                              color: Colors.orange[700],
+                                            ),
+                                            SizedBox(width: 8),
+                                            Text(
+                                              'Usage Deviations',
+                                              style: Theme.of(
+                                                context,
+                                              ).textTheme.titleMedium?.copyWith(
+                                                color: Colors.orange[700],
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        SizedBox(height: 12),
+                                        ...usageDeviations.entries.map(
+                                          (e) => Padding(
+                                            padding: const EdgeInsets.only(
+                                              bottom: 8.0,
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.circle,
+                                                  size: 8,
+                                                  color: Colors.orange[700],
+                                                ),
+                                                SizedBox(width: 8),
+                                                Text(
+                                                  '${e.key}: ${(e.value * 100).toStringAsFixed(1)}% over benchmark',
+                                                  style: TextStyle(
+                                                    fontWeight:
+                                                        e.value > 0.2
+                                                            ? FontWeight.bold
+                                                            : FontWeight.normal,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                                .animate()
+                                .fadeIn(duration: 500.ms)
+                                .scale(
+                                  delay: 200.ms,
+                                  begin: Offset(0.95, 0.95),
+                                ),
+                          SizedBox(height: 32),
+                          _buildChartSection(
+                            context: context,
+                            title: 'Cost per Piece (7 Days)',
+                            metrics: metrics,
+                            isMargin: false,
+                            color: Colors.amber[700]!,
+                          ),
+                          SizedBox(height: 32),
+                          _buildChartSection(
+                            context: context,
+                            title: 'Profit Margin (7 Days)',
+                            metrics: metrics,
+                            isMargin: true,
+                            color: Colors.green[700]!,
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  Widget _buildChartSection({
+    required BuildContext context,
+    required String title,
+    required List metrics,
+    required bool isMargin,
+    required Color color,
+  }) {
+    return Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 8),
+            Text(
+              isMargin
+                  ? 'Showing profit margin trends over the past week'
+                  : 'Showing cost per piece trends over the past week',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.color?.withValues(alpha:  0.7),
+              ),
+            ),
+            SizedBox(height: 24),
+            SizedBox(
+              height: 300,
+              child: Semantics(
+                label:
+                    'Line chart showing ${isMargin ? "profit margin" : "cost per piece"} over 7 days',
+                child: LineChart(
+                  LineChartData(
+                    lineTouchData: LineTouchData(
+                      touchTooltipData: LineTouchTooltipData(
+                        getTooltipItems: (touchedSpots) {
+                          return touchedSpots.map((spot) {
+                            int index = spot.x.toInt();
+                            if (index >= 0 && index < metrics.length) {
+                              String date = metrics[index].date
+                                  .toString()
+                                  .substring(5, 10);
+                              double value =
+                                  isMargin
+                                      ? metrics[index].marginPerPiece
+                                      : metrics[index].costPerPiece;
+                              return LineTooltipItem(
+                                '$date: ${CurrencyFormatter().formatWithPrecision(value, 1) }',
+                                TextStyle(
+                                  color:
+                                      Theme.of(
+                                        context,
+                                      ).textTheme.bodyLarge?.color,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              );
+                            }
+                            return null;
+                          }).toList();
+                        },
+                      ),
+                      handleBuiltInTouches: true,
+                    ),
+                    lineBarsData: [
+                      LineChartBarData(
+                        spots:
+                            metrics
+                                .asMap()
+                                .entries
+                                .map(
+                                  (e) => FlSpot(
+                                    e.key.toDouble(),
+                                    isMargin
+                                        ? e.value.marginPerPiece
+                                        : e.value.costPerPiece,
+                                  ),
+                                )
+                                .toList(),
+                        isCurved: true,
+                        gradient: LinearGradient(
+                          colors: [color.withValues(alpha:  0.7), color],
+                        ),
+                        barWidth: 4,
+                        isStrokeCapRound: true,
+                        dotData: FlDotData(
+                          show: true,
+                          getDotPainter: (spot, percent, barData, index) {
+                            return FlDotCirclePainter(
+                              radius: 6,
+                              color: color,
+                              strokeWidth: 2,
+                              strokeColor: Theme.of(context).cardColor,
+                            );
+                          },
+                        ),
+                        belowBarData: BarAreaData(
+                          show: true,
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              color.withValues(alpha:  0.3),
+                              color.withValues(alpha:  0.0),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                    minY: _getMinY(metrics, isMargin),
+                    maxY: _getMaxY(metrics, isMargin),
+                    titlesData: FlTitlesData(
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          getTitlesWidget: (value, meta) {
+                            int index = value.toInt();
+                            if (index >= 0 && index < metrics.length) {
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 8.0),
+                                child: Text(
+                                  metrics[index].date.toString().substring(
+                                    5,
+                                    10,
+                                  ),
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              );
+                            }
+                            return const SizedBox.shrink();
+                          },
+                          reservedSize: 30,
+                        ),
+                      ),
+                      leftTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          getTitlesWidget: (value, meta) {
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 8.0),
+                              child: Text(
+                                CurrencyFormatter().formatWithoutSymbol(value),
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            );
+                          },
+                          reservedSize: 40,
+                        ),
+                      ),
+                      topTitles: AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                      rightTitles: AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                    ),
+                    borderData: FlBorderData(
+                      show: true,
+                      border: Border(
+                        bottom: BorderSide(
+                          color: Theme.of(context).dividerColor,
+                        ),
+                        left: BorderSide(color: Theme.of(context).dividerColor),
+                      ),
+                    ),
+                    gridData: FlGridData(
+                      show: true,
+                      drawHorizontalLine: true,
+                      horizontalInterval: _getGridInterval(metrics, isMargin),
+                      getDrawingHorizontalLine:
+                          (value) => FlLine(
+                            color: Theme.of(
+                              context,
+                            ).dividerColor.withValues(alpha:  0.3),
+                            strokeWidth: 1,
+                            dashArray: [5, 5],
+                          ),
+                    ),
+                  ),
+                ),
+              ),
+            ).animate().fadeIn(duration: 600.ms).slideY(begin: 0.2, end: 0),
+          ],
+        ),
+      ),
+    ).animate().fadeIn(duration: 500.ms).scale(begin: Offset(0.98, 0.98));
+  }
+  double _getMinY(List metrics, bool isMargin) {
+    if (metrics.isEmpty) return 0;
+    double min = double.infinity;
+    for (var metric in metrics) {
+      double value = isMargin ? metric.marginPerPiece : metric.costPerPiece;
+      if (value < min) min = value;
+    }
+    return (min * 0.9).clamp(
+      0,
+      double.infinity,
+    );
+  }
+  double _getMaxY(List metrics, bool isMargin) {
+    if (metrics.isEmpty) return 10;
+    double max = 0;
+    for (var metric in metrics) {
+      double value = isMargin ? metric.marginPerPiece : metric.costPerPiece;
+      if (value > max) max = value;
+    }
+    return max * 1.1;
+  }
+  double _getGridInterval(List metrics, bool isMargin) {
+    double range = _getMaxY(metrics, isMargin) - _getMinY(metrics, isMargin);
+    if (range <= 5) return 1;
+    if (range <= 10) return 2;
+    if (range <= 20) return 4;
+    return 5;
+  }
+  double _calculateWeeklyRevenue(List metrics) {
+    if (metrics.isEmpty) return 0;
+    return metrics.fold(0.0, (total, metric) => total + metric.totalRevenue);
+  }
+  List _calculateMetrics(List salesDocs, List invLogs) {
+    var ingredientsMap = cachedIngredients();
+    var invLogsByDate = groupLogsByDate(invLogs);
+    List metrics = [];
+    for (var salesDoc in salesDocs) {
+      var salesData = salesDoc.data() as Map<String, dynamic>;
+      var date = (salesData['date'] as Timestamp).toDate().toString().substring(
+        0,
+        10,
+      );
+      var piecesSold = salesData['piecesSold'];
+      var totalRevenue =
+          salesData['totalRevenue'] is int
+              ? (salesData['totalRevenue'] as int).toDouble()
+              : double.parse(salesData['totalRevenue'].toString());
+      if (invLogsByDate.containsKey(date)) {
+        var logs = invLogsByDate[date]!;
+        double totalCost = 0;
+        for (var log in logs) {
+          var item = log['item'];
+          var consumed =
+              log['opening'] +
+              log['received'] -
+              log['closing'] -
+              log['discarded'];
+          var unitCost = ingredientsMap[item] ?? 5.0;
+          totalCost += consumed * unitCost;
+        }
+        var costPerPiece = piecesSold > 0 ? totalCost / piecesSold : 0.0;
+        var sellingPrice = totalRevenue / piecesSold;
+        var margin = sellingPrice - costPerPiece;
+        metrics.add(
+          DailyMetrics(
+            date: (salesData['date'] as Timestamp).toDate(),
+            costPerPiece: costPerPiece,
+            marginPerPiece: margin,
+            totalCost: totalCost,
+            totalRevenue: totalRevenue,
+            piecesSold: piecesSold,
+          ),
+        );
+      }
+    }
+    return metrics;
+  }
+  Map<String, double> _calculateHighWaste(List invLogs) {
+    var result = <String, double>{};
+    var grouped = groupLogsByItem(invLogs);
+    for (var entry in grouped.entries) {
+      var item = entry.key;
+      var logs = entry.value;
+      var totalDiscarded = logs.fold(0.0, (total, log) => total + log['discarded']);
+      var totalReceived = logs.fold(0.0, (total, log) => total + log['received']);
+      var wasteRatio = totalReceived > 0 ? totalDiscarded / totalReceived : 0.0;
+      if (wasteRatio > 0.05) result[item] = wasteRatio;
+    }
+    return result;
+  }
+  Map<String, double> _calculateUsageDeviations(List salesDocs, List invLogs) {
+    var recipeMap = cachedRecipes();
+    var groupedLogs = groupLogsByItem(invLogs);
+    var salesByDate = {
+      for (var doc in salesDocs)
+        (doc['date'] as Timestamp).toDate().toString().substring(0, 10):
+            doc['piecesSold'] as int,
+    };
+    var result = <String, double>{};
+    for (var entry in groupedLogs.entries) {
+      var item = entry.key;
+      var logs = entry.value;
+      double totalConsumed = logs.fold(
+        0.0,
+        (total, log) =>
+            total +
+            (log['opening'] +
+                log['received'] -
+                log['closing'] -
+                log['discarded']),
+      );
+      int totalPiecesSold = logs.fold(0, (total, log) {
+        var date = (log['date'] as Timestamp).toDate().toString().substring(
+          0,
+          10,
+        );
+        return total + (salesByDate[date] ?? 0);
+      });
+      double usagePerPiece =
+          totalPiecesSold > 0 ? totalConsumed / totalPiecesSold : 0;
+      double benchmark = recipeMap[item] ?? 0;
+      if (benchmark > 0 && usagePerPiece > benchmark * 1.1) {
+        double deviation = (usagePerPiece / benchmark) - 1;
+        result[item] = deviation;
+      }
+    }
+    return result;
+  }
+}
+class DailyMetrics {
+  DateTime date;
+  double costPerPiece;
+  double marginPerPiece;
+  double totalCost;
+  double totalRevenue;
+  int piecesSold;
+  DailyMetrics({
+    required this.date,
+    required this.costPerPiece,
+    required this.marginPerPiece,
+    required this.totalCost,
+    required this.totalRevenue,
+    required this.piecesSold,
+  });
+}
+
+================
+File: firebase_options.dart
+================
+import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
+class DefaultFirebaseOptions {
+  static FirebaseOptions get currentPlatform {
+    if (kIsWeb) {
+      return web;
+    }
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return android;
+      case TargetPlatform.iOS:
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for ios - '
+          'you can reconfigure this by running the FlutterFire CLI again.',
+        );
+      case TargetPlatform.macOS:
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for macos - '
+          'you can reconfigure this by running the FlutterFire CLI again.',
+        );
+      case TargetPlatform.windows:
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for windows - '
+          'you can reconfigure this by running the FlutterFire CLI again.',
+        );
+      case TargetPlatform.linux:
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for linux - '
+          'you can reconfigure this by running the FlutterFire CLI again.',
+        );
+      default:
+        throw UnsupportedError(
+          'DefaultFirebaseOptions are not supported for this platform.',
+        );
+    }
+  }
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'AIzaSyAJdCK5sXjvS96G5jPJ_NiG1cGekZsflQY',
+    appId: '1:38231863409:web:ba1ca81bef16a4281b6bd0',
+    messagingSenderId: '38231863409',
+    projectId: 'friedchickencostapp',
+    authDomain: 'friedchickencostapp.firebaseapp.com',
+    storageBucket: 'friedchickencostapp.firebasestorage.app',
+    measurementId: 'G-3RW1HMPVXV',
+  );
+  static const FirebaseOptions android = FirebaseOptions(
+    apiKey: 'AIzaSyCp9SDQo5O6LnUUg2KjAvyvqHdq3rJZcYU',
+    appId: '1:38231863409:android:94f3885a2e98013c1b6bd0',
+    messagingSenderId: '38231863409',
+    projectId: 'friedchickencostapp',
+    storageBucket: 'friedchickencostapp.firebasestorage.app',
+  );
+}
+
+================
+File: ingredient_page.dart
+================
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:responsive_framework/responsive_framework.dart';
+import 'utils.dart';
+class IngredientPage extends StatefulWidget {
+  const IngredientPage({super.key});
+  @override
+  _IngredientPageState createState() => _IngredientPageState();
+}
+class _IngredientPageState extends State with SingleTickerProviderStateMixin {
+  final _ingredientFormKey = GlobalKey<FormState>();
+  final _recipeFormKey = GlobalKey<FormState>();
+  final _ingredientItemController = TextEditingController();
+  final _unitController = TextEditingController();
+  final _unitCostController = TextEditingController();
+  final _supplierController = TextEditingController();
+  final _notesController = TextEditingController();
+  final _recipeItemController = TextEditingController();
+  final _quantityPerPieceController = TextEditingController();
+  String? _editingIngredientId;
+  String? _editingRecipeId;
+  TabController? _tabController;
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+  @override
+  void dispose() {
+    _ingredientItemController.dispose();
+    _unitController.dispose();
+    _unitCostController.dispose();
+    _supplierController.dispose();
+    _notesController.dispose();
+    _recipeItemController.dispose();
+    _quantityPerPieceController.dispose();
+    _tabController?.dispose();
+    super.dispose();
+  }
+  void _editIngredient(Map<String, dynamic> data, String id) {
+    setState(() {
+      _editingIngredientId = id;
+      _ingredientItemController.text = data['item'];
+      _unitController.text = data['unit'];
+      _unitCostController.text = data['unitCost'].toString();
+      _supplierController.text = data['supplier'] ?? '';
+      _notesController.text = data['notes'] ?? '';
+    });
+  }
+  void _editRecipeStandard(Map<String, dynamic> data, String id) {
+    setState(() {
+      _editingRecipeId = id;
+      _recipeItemController.text = data['item'];
+      _quantityPerPieceController.text = data['quantityPerPiece'].toString();
+    });
+  }
+  Future _saveIngredient() async {
+    if (!_ingredientFormKey.currentState!.validate()) {
+      return;
+    }
+    var data = {
+      'item': _ingredientItemController.text,
+      'unit': _unitController.text,
+      'unitCost': double.parse(_unitCostController.text),
+      'supplier': _supplierController.text,
+      'notes': _notesController.text,
+      'updatedAt': Timestamp.now(),
+    };
+    if (_editingIngredientId != null) {
+      await FirebaseFirestore.instance
+          .collection('ingredients')
+          .doc(_editingIngredientId)
+          .update(data);
+    } else {
+      await FirebaseFirestore.instance.collection('ingredients').add(data);
+    }
+    _clearIngredientForm();
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Ingredient saved')));
+  }
+  Future _saveRecipeStandard() async {
+    if (!_recipeFormKey.currentState!.validate()) {
+      return;
+    }
+    var data = {
+      'item': _recipeItemController.text,
+      'quantityPerPiece': double.parse(_quantityPerPieceController.text),
+      'updatedAt': Timestamp.now(),
+    };
+    if (_editingRecipeId != null) {
+      await FirebaseFirestore.instance
+          .collection('recipe_standards')
+          .doc(_editingRecipeId)
+          .update(data);
+    } else {
+      await FirebaseFirestore.instance
+          .collection('recipe_standards')
+          .doc(_recipeItemController.text)
+          .set(data);
+    }
+    clearRecipeCache();
+    _clearRecipeForm();
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Recipe standard saved')));
+  }
+  Future _deleteIngredient(String id) async {
+    await FirebaseFirestore.instance.collection('ingredients').doc(id).delete();
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Ingredient deleted')));
+  }
+  Future _deleteRecipeStandard(String id) async {
+    await FirebaseFirestore.instance
+        .collection('recipe_standards')
+        .doc(id)
+        .delete();
+    clearRecipeCache();
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Recipe standard deleted')));
+  }
+  void _clearIngredientForm() {
+    setState(() {
+      _editingIngredientId = null;
+      _ingredientItemController.clear();
+      _unitController.clear();
+      _unitCostController.clear();
+      _supplierController.clear();
+      _notesController.clear();
+    });
+  }
+  void _clearRecipeForm() {
+    setState(() {
+      _editingRecipeId = null;
+      _recipeItemController.clear();
+      _quantityPerPieceController.clear();
+    });
+  }
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Ingredients & Recipes'),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: [Tab(text: 'Ingredients'), Tab(text: 'Recipe Standards')],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                Card(
+                  elevation: 2,
+                  child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Form(
+                      key: _ingredientFormKey,
+                      child: Column(
+                        children: [
+                          TextFormField(
+                            controller: _ingredientItemController,
+                            decoration: InputDecoration(
+                              labelText: 'Ingredient Name',
+                            ),
+                            validator:
+                                (value) => value!.isEmpty ? 'Required' : null,
+                          ),
+                          TextFormField(
+                            controller: _unitController,
+                            decoration: InputDecoration(labelText: 'Unit'),
+                            validator:
+                                (value) => value!.isEmpty ? 'Required' : null,
+                          ),
+                          TextFormField(
+                            controller: _unitCostController,
+                            decoration: InputDecoration(labelText: 'Unit Cost'),
+                            keyboardType: TextInputType.number,
+                            validator:
+                                (value) =>
+                                    value!.isEmpty ||
+                                            double.tryParse(value) == null
+                                        ? 'Invalid'
+                                        : null,
+                          ),
+                          TextFormField(
+                            controller: _supplierController,
+                            decoration: InputDecoration(labelText: 'Supplier'),
+                          ),
+                          TextFormField(
+                            controller: _notesController,
+                            decoration: InputDecoration(labelText: 'Notes'),
+                          ),
+                          SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              OutlinedButton(
+                                onPressed: _clearIngredientForm,
+                                child: Text('Cancel'),
+                              ),
+                              SizedBox(width: 8),
+                              ElevatedButton(
+                                onPressed: _saveIngredient,
+                                child: Text(
+                                  _editingIngredientId == null
+                                      ? 'Add'
+                                      : 'Update',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ).animate().fadeIn(duration: 300.ms),
+                SizedBox(height: 20),
+                Expanded(
+                  child: StreamBuilder(
+                    stream:
+                        FirebaseFirestore.instance
+                            .collection('ingredients')
+                            .orderBy('item')
+                            .snapshots(),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData) {
+                        return ShimmerWidget(
+                          child: Container(
+                            height: 300,
+                            color: Colors.grey[300],
+                          ),
+                        );
+                      }
+                      var ingredients = snapshot.data!.docs;
+                      return ResponsiveBreakpoints.of(
+                            context,
+                          ).smallerThan(DESKTOP)
+                          ? ListView.builder(
+                            itemCount: ingredients.length,
+                            itemBuilder: (context, index) {
+                              var data = ingredients[index].data();
+                              var id = ingredients[index].id;
+                              return Card(
+                                elevation: 2,
+                                child: ListTile(
+                                  title: Text(data['item']),
+                                  subtitle: Text(
+                                    'Unit: ${data['unit']}, Cost: ${data['unitCost']}, Supplier: ${data['supplier'] ?? 'N/A'}',
+                                  ),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        icon: Icon(Icons.edit),
+                                        onPressed:
+                                            () => _editIngredient(data, id),
+                                      ),
+                                      IconButton(
+                                        icon: Icon(Icons.delete),
+                                        onPressed: () => _deleteIngredient(id),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          )
+                          : DataTable(
+                            columns: [
+                              DataColumn(label: Text('Ingredient')),
+                              DataColumn(label: Text('Unit')),
+                              DataColumn(label: Text('Unit Cost')),
+                              DataColumn(label: Text('Supplier')),
+                              DataColumn(label: Text('Actions')),
+                            ],
+                            rows:
+                                ingredients.map((doc) {
+                                  var data = doc.data();
+                                  var id = doc.id;
+                                  return DataRow(
+                                    cells: [
+                                      DataCell(Text(data['item'])),
+                                      DataCell(Text(data['unit'])),
+                                      DataCell(
+                                        Text(
+                                          '${data['unitCost'].toStringAsFixed(1)}',
+                                        ),
+                                      ),
+                                      DataCell(Text(data['supplier'] ?? 'N/A')),
+                                      DataCell(
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            IconButton(
+                                              icon: Icon(Icons.edit),
+                                              onPressed:
+                                                  () =>
+                                                      _editIngredient(data, id),
+                                            ),
+                                            IconButton(
+                                              icon: Icon(Icons.delete),
+                                              onPressed:
+                                                  () => _deleteIngredient(id),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                }).toList(),
+                          );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                Card(
+                  elevation: 2,
+                  child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Form(
+                      key: _recipeFormKey,
+                      child: Column(
+                        children: [
+                          TextFormField(
+                            controller: _recipeItemController,
+                            decoration: InputDecoration(
+                              labelText: 'Ingredient Name',
+                            ),
+                            validator:
+                                (value) => value!.isEmpty ? 'Required' : null,
+                          ),
+                          TextFormField(
+                            controller: _quantityPerPieceController,
+                            decoration: InputDecoration(
+                              labelText: 'Quantity per Piece',
+                            ),
+                            keyboardType: TextInputType.number,
+                            validator:
+                                (value) =>
+                                    value!.isEmpty ||
+                                            double.tryParse(value) == null ||
+                                            double.parse(value) <= 0
+                                        ? 'Invalid positive number'
+                                        : null,
+                          ),
+                          SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              OutlinedButton(
+                                onPressed: _clearRecipeForm,
+                                child: Text('Cancel'),
+                              ),
+                              SizedBox(width: 8),
+                              ElevatedButton(
+                                onPressed: _saveRecipeStandard,
+                                child: Text(
+                                  _editingRecipeId == null ? 'Add' : 'Update',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ).animate().fadeIn(duration: 300.ms),
+                SizedBox(height: 20),
+                Expanded(
+                  child: StreamBuilder(
+                    stream:
+                        FirebaseFirestore.instance
+                            .collection('recipe_standards')
+                            .orderBy('item')
+                            .snapshots(),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData)
+                        return ShimmerWidget(
+                          child: Container(
+                            height: 300,
+                            color: Colors.grey[300],
+                          ),
+                        );
+                      var recipes = snapshot.data!.docs;
+                      return ResponsiveBreakpoints.of(
+                            context,
+                          ).smallerThan(DESKTOP)
+                          ? ListView.builder(
+                            itemCount: recipes.length,
+                            itemBuilder: (context, index) {
+                              var data = recipes[index].data();
+                              var id = recipes[index].id;
+                              return Card(
+                                elevation: 2,
+                                child: ListTile(
+                                  title: Text(data['item']),
+                                  subtitle: Text(
+                                    'Quantity per Piece: ${data['quantityPerPiece'].toStringAsFixed(4)}',
+                                  ),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        icon: Icon(Icons.edit),
+                                        onPressed:
+                                            () => _editRecipeStandard(data, id),
+                                      ),
+                                      IconButton(
+                                        icon: Icon(Icons.delete),
+                                        onPressed:
+                                            () => _deleteRecipeStandard(id),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          )
+                          : DataTable(
+                            columns: [
+                              DataColumn(label: Text('Ingredient')),
+                              DataColumn(label: Text('Quantity per Piece')),
+                              DataColumn(label: Text('Actions')),
+                            ],
+                            rows:
+                                recipes.map((doc) {
+                                  var data = doc.data();
+                                  var id = doc.id;
+                                  return DataRow(
+                                    cells: [
+                                      DataCell(Text(data['item'])),
+                                      DataCell(
+                                        Text(
+                                          data['quantityPerPiece']
+                                              .toStringAsFixed(4),
+                                        ),
+                                      ),
+                                      DataCell(
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            IconButton(
+                                              icon: Icon(Icons.edit),
+                                              onPressed:
+                                                  () => _editRecipeStandard(
+                                                    data,
+                                                    id,
+                                                  ),
+                                            ),
+                                            IconButton(
+                                              icon: Icon(Icons.delete),
+                                              onPressed:
+                                                  () =>
+                                                      _deleteRecipeStandard(id),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                }).toList(),
+                          );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+================
+File: inventory_page.dart
+================
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:responsive_framework/responsive_framework.dart';
+import 'utils.dart';
+class InventoryPage extends StatefulWidget {
+  const InventoryPage({super.key});
+  @override
+  _InventoryPageState createState() => _InventoryPageState();
+}
+class _InventoryPageState extends State {
+  DateTime selectedDate = DateTime.now();
+  List inventoryLogs = [];
+  final formKey = GlobalKey<FormState>();
+  final int pageSize = 20;
+  bool hasMore = true;
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+  Future _loadData({bool loadMore = false}) async {
+    var ingredientsSnapshot =
+        await FirebaseFirestore.instance
+            .collection('ingredients')
+            .orderBy('item')
+            .limit(pageSize)
+            .get();
+    var items =
+        ingredientsSnapshot.docs.map((doc) => doc['item'] as String).toList();
+    List logs = [];
+    for (var item in items) {
+      var log = await _getLogForItem(item, selectedDate);
+      logs.add(log);
+    }
+    setState(() {
+      inventoryLogs = loadMore ? [...inventoryLogs, ...logs] : logs;
+      hasMore = ingredientsSnapshot.docs.length == pageSize;
+    });
+  }
+  Future _getLogForItem(String item, DateTime date) async {
+    var logSnapshot =
+        await FirebaseFirestore.instance
+            .collection('inventory_logs')
+            .where('date', isEqualTo: date)
+            .where('item', isEqualTo: item)
+            .get();
+    if (logSnapshot.docs.isNotEmpty) {
+      var data = logSnapshot.docs.first.data();
+      return InventoryLog(
+        item: item,
+        opening: data['opening'].toString(),
+        received: data['received'].toString(),
+        discarded: data['discarded'].toString(),
+        closing: data['closing'].toString(),
+        physical: data['physical'].toString(),
+      );
+    } else {
+      var prevLogSnapshot =
+          await FirebaseFirestore.instance
+              .collection('inventory_logs')
+              .where('item', isEqualTo: item)
+              .where('date', isLessThan: date)
+              .orderBy('date', descending: true)
+              .limit(1)
+              .get();
+      if (prevLogSnapshot.docs.isNotEmpty) {
+        var prevData = prevLogSnapshot.docs.first.data();
+        var opening = prevData['closing'].toString();
+        return InventoryLog(
+          item: item,
+          opening: opening,
+          received: '0',
+          discarded: '0',
+          closing: opening,
+          physical: opening,
+        );
+      } else {
+        return InventoryLog(
+          item: item,
+          opening: '0',
+          received: '0',
+          discarded: '0',
+          closing: '0',
+          physical: '0',
+        );
+      }
+    }
+  }
+  Future saveData() async {
+    if (!formKey.currentState!.validate()) return;
+    var batch = FirebaseFirestore.instance.batch();
+    for (var log in inventoryLogs) {
+      var docId = "${selectedDate.toString().substring(0, 10)}${log.item}";
+      var docRef = FirebaseFirestore.instance
+          .collection('inventory_logs')
+          .doc(docId);
+      var opening = double.parse(log.openingController.text);
+      var received = double.parse(log.receivedController.text);
+      var discarded = double.parse(log.discardedController.text);
+      var closing = double.parse(log.closingController.text);
+      var physical = double.parse(log.physicalController.text);
+      if (physical != closing) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Physical count for ${log.item} does not match closing',
+            ),
+          ),
+        );
+        return;
+      }
+      batch.set(docRef, {
+        'date': selectedDate,
+        'item': log.item,
+        'opening': opening,
+        'received': received,
+        'discarded': discarded,
+        'closing': closing,
+        'physical': physical,
+      });
+    }
+    await batch.commit();
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Inventory saved')));
+  }
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Inventory')),
+      body: Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Text('Date: ${selectedDate.toString().substring(0, 10)}'),
+                IconButton(
+                  icon: Icon(Icons.calendar_today),
+                  onPressed: () async {
+                    var newDate = await showDatePicker(
+                      context: context,
+                      initialDate: selectedDate,
+                      firstDate: DateTime(2000),
+                      lastDate: DateTime(2100),
+                    );
+                    if (newDate != null) {
+                      setState(() {
+                        selectedDate = newDate;
+                      });
+                      _loadData();
+                    }
+                  },
+                ),
+              ],
+            ),
+            Expanded(
+              child: Form(
+                key: formKey,
+                child:
+                    ResponsiveBreakpoints.of(context).smallerThan(DESKTOP)
+                        ? ListView.builder(
+                          itemCount: inventoryLogs.length + (hasMore ? 1 : 0),
+                          itemBuilder: (context, index) {
+                            if (index == inventoryLogs.length && hasMore) {
+                              return ElevatedButton(
+                                onPressed: () => _loadData(loadMore: true),
+                                child: Text('Load More'),
+                              );
+                            }
+                            var log = inventoryLogs[index];
+var consumed = 0.0;
+try {
+  if (double.tryParse(log.openingController.text) != null &&
+      double.tryParse(log.receivedController.text) != null &&
+      double.tryParse(log.closingController.text) != null &&
+      double.tryParse(log.discardedController.text) != null) {
+    consumed = double.parse(log.openingController.text) +
+              double.parse(log.receivedController.text) -
+              double.parse(log.closingController.text) -
+              double.parse(log.discardedController.text);
+  }
+} catch (e) {
+}
+                            return Card(
+                              elevation: 2,
+                              child: Padding(
+                                padding: EdgeInsets.all(8.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      log.item,
+                                      style:
+                                          Theme.of(
+                                            context,
+                                          ).textTheme.titleMedium,
+                                    ),
+                                    Text(
+                                      'Consumed: ${consumed.toStringAsFixed(2)}',
+                                      style:
+                                          Theme.of(context).textTheme.bodySmall,
+                                    ),
+                                    TextFormField(
+                                      controller: log.openingController,
+                                      decoration: InputDecoration(
+                                        labelText: 'Opening Inventory',
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                      validator:
+                                          (value) =>
+                                              value!.isEmpty ||
+                                                      double.tryParse(value) ==
+                                                          null ||
+                                                      double.parse(value) < 0
+                                                  ? 'Invalid number'
+                                                  : null,
+                                      onChanged: debounced(
+                                        (value) => setState(() {}),
+                                      ),
+                                    ),
+                                    TextFormField(
+                                      controller: log.receivedController,
+                                      decoration: InputDecoration(
+                                        labelText: 'Received',
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                      validator:
+                                          (value) =>
+                                              value!.isEmpty ||
+                                                      double.tryParse(value) ==
+                                                          null ||
+                                                      double.parse(value) < 0
+                                                  ? 'Invalid number'
+                                                  : null,
+                                      onChanged: debounced(
+                                        (value) => setState(() {}),
+                                      ),
+                                    ),
+                                    TextFormField(
+                                      controller: log.discardedController,
+                                      decoration: InputDecoration(
+                                        labelText: 'Discarded',
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                      validator:
+                                          (value) =>
+                                              value!.isEmpty ||
+                                                      double.tryParse(value) ==
+                                                          null ||
+                                                      double.parse(value) < 0
+                                                  ? 'Invalid number'
+                                                  : null,
+                                      onChanged: debounced(
+                                        (value) => setState(() {}),
+                                      ),
+                                    ),
+                                    TextFormField(
+                                      controller: log.closingController,
+                                      decoration: InputDecoration(
+                                        labelText: 'Closing Inventory',
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                      validator:
+                                          (value) =>
+                                              value!.isEmpty ||
+                                                      double.tryParse(value) ==
+                                                          null ||
+                                                      double.parse(value) < 0
+                                                  ? 'Invalid number'
+                                                  : null,
+                                      onChanged: debounced(
+                                        (value) => setState(() {}),
+                                      ),
+                                    ),
+                                    TextFormField(
+                                      controller: log.physicalController,
+                                      decoration: InputDecoration(
+                                        labelText: 'Physical Inventory',
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                      validator:
+                                          (value) =>
+                                              value!.isEmpty ||
+                                                      double.tryParse(value) ==
+                                                          null ||
+                                                      double.parse(value) < 0
+                                                  ? 'Invalid number'
+                                                  : null,
+                                      onChanged: debounced(
+                                        (value) => setState(() {}),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ).animate().fadeIn(duration: 300.ms);
+                          },
+                        )
+                        : SingleChildScrollView(
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(child: Text('Item')),
+                                  Expanded(child: Text('Consumed')),
+                                  Expanded(child: Text('Opening')),
+                                  Expanded(child: Text('Received')),
+                                  Expanded(child: Text('Discarded')),
+                                  Expanded(child: Text('Closing')),
+                                  Expanded(child: Text('Physical')),
+                                ],
+                              ),
+                              ...inventoryLogs.map((log) {
+                                var consumed =
+                                    double.parse(log.openingController.text) +
+                                    double.parse(log.receivedController.text) -
+                                    double.parse(log.closingController.text) -
+                                    double.parse(log.discardedController.text);
+                                return Row(
+                                  children: [
+                                    Expanded(child: Text(log.item)),
+                                    Expanded(
+                                      child: Text(consumed.toStringAsFixed(2)),
+                                    ),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: log.openingController,
+                                        keyboardType: TextInputType.number,
+                                        validator:
+                                            (value) =>
+                                                value!.isEmpty ||
+                                                        double.tryParse(
+                                                              value,
+                                                            ) ==
+                                                            null ||
+                                                        double.parse(value) < 0
+                                                    ? 'Invalid'
+                                                    : null,
+                                        onChanged: debounced(
+                                          (value) => setState(() {}),
+                                        ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: log.receivedController,
+                                        keyboardType: TextInputType.number,
+                                        validator:
+                                            (value) =>
+                                                value!.isEmpty ||
+                                                        double.tryParse(
+                                                              value,
+                                                            ) ==
+                                                            null ||
+                                                        double.parse(value) < 0
+                                                    ? 'Invalid'
+                                                    : null,
+                                        onChanged: debounced(
+                                          (value) => setState(() {}),
+                                        ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: log.discardedController,
+                                        keyboardType: TextInputType.number,
+                                        validator:
+                                            (value) =>
+                                                value!.isEmpty ||
+                                                        double.tryParse(
+                                                              value,
+                                                            ) ==
+                                                            null ||
+                                                        double.parse(value) < 0
+                                                    ? 'Invalid'
+                                                    : null,
+                                        onChanged: debounced(
+                                          (value) => setState(() {}),
+                                        ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: log.closingController,
+                                        keyboardType: TextInputType.number,
+                                        validator:
+                                            (value) =>
+                                                value!.isEmpty ||
+                                                        double.tryParse(
+                                                              value,
+                                                            ) ==
+                                                            null ||
+                                                        double.parse(value) < 0
+                                                    ? 'Invalid'
+                                                    : null,
+                                        onChanged: debounced(
+                                          (value) => setState(() {}),
+                                        ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: log.physicalController,
+                                        keyboardType: TextInputType.number,
+                                        validator:
+                                            (value) =>
+                                                value!.isEmpty ||
+                                                        double.tryParse(
+                                                              value,
+                                                            ) ==
+                                                            null ||
+                                                        double.parse(value) < 0
+                                                    ? 'Invalid'
+                                                    : null,
+                                        onChanged: debounced(
+                                          (value) => setState(() {}),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }),
+                              if (hasMore)
+                                ElevatedButton(
+                                  onPressed: () => _loadData(loadMore: true),
+                                  child: Text('Load More'),
+                                ),
+                            ],
+                          ),
+                        ),
+              ),
+            ),
+            ElevatedButton(onPressed: saveData, child: Text('Save')),
+          ],
+        ),
+      ),
+    );
+  }
+}
+class InventoryLog {
+  String item;
+  TextEditingController openingController;
+  TextEditingController receivedController;
+  TextEditingController discardedController;
+  TextEditingController closingController;
+  TextEditingController physicalController;
+  InventoryLog({
+    required this.item,
+    required String opening,
+    required String received,
+    required String discarded,
+    required String closing,
+    required String physical,
+  }) : openingController = TextEditingController(text: opening),
+       receivedController = TextEditingController(text: received),
+       discardedController = TextEditingController(text: discarded),
+       closingController = TextEditingController(text: closing),
+       physicalController = TextEditingController(text: physical);
+}
+
+================
+File: login_page.dart
+================
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
+  @override
+  _LoginPageState createState() => _LoginPageState();
+}
+class _LoginPageState extends State<LoginPage> {
+  final _emailController = TextEditingController(
+    text: 'truthysys@gmail.com',
+  );
+  final _passwordController = TextEditingController(
+    text: '12345678',
+  );
+  Future<void> _login() async {
+    try {
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login failed: $e')));
+    }
+  }
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('Welcome', style: Theme.of(context).textTheme.headlineMedium),
+              SizedBox(height: 20),
+              TextField(
+                controller: _emailController,
+                decoration: InputDecoration(labelText: 'Email'),
+                keyboardType: TextInputType.emailAddress,
+              ),
+              TextField(
+                controller: _passwordController,
+                decoration: InputDecoration(labelText: 'Password'),
+                obscureText: true,
+              ),
+              SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: _login,
+                child: Text('Login'),
+              ),
+            ],
+          ).animate().fadeIn(duration: 500.ms),
+        ),
+      ),
+    );
+  }
+}
+
+================
+File: main.dart
+================
+import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:frier_cost/firebase_options.dart';
+import 'app.dart';
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+   options: DefaultFirebaseOptions.currentPlatform,
+  );
+  runApp(FriedChickenCostApp());
+}
+
+================
+File: metric_card.dart
+================
+import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+class MetricCard extends StatefulWidget {
+  final String title;
+  final String value;
+  final IconData? icon;
+  final Color? accentColor;
+  final bool isPositive;
+  final bool showTrendIndicator;
+  const MetricCard({
+    super.key,
+    required this.title,
+    required this.value,
+    this.icon,
+    this.accentColor,
+    this.isPositive = true,
+    this.showTrendIndicator = false,
+  });
+  @override
+  State<MetricCard> createState() => _MetricCardState();
+}
+class _MetricCardState extends State<MetricCard>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+  bool _isHovering = false;
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 200),
+      vsync: this,
+    );
+    _scaleAnimation = Tween<double>(
+      begin: 1.0,
+      end: 1.05,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+  }
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final Color effectiveAccentColor =
+        widget.accentColor ??
+        (widget.isPositive ? colorScheme.primary : Colors.redAccent);
+    final gradient = LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [
+        effectiveAccentColor.withOpacity(0.05),
+        effectiveAccentColor.withOpacity(0.15),
+      ],
+    );
+    return MouseRegion(
+      onEnter: (_) {
+        setState(() {
+          _isHovering = true;
+          _controller.forward();
+        });
+      },
+      onExit: (_) {
+        setState(() {
+          _isHovering = false;
+          _controller.reverse();
+        });
+      },
+      cursor: SystemMouseCursors.click,
+      child: ScaleTransition(
+        scale: _scaleAnimation,
+        child: SizedBox(
+          width: 200,
+          child: Card(
+                elevation: _isHovering ? 8 : 2,
+                shadowColor: effectiveAccentColor.withOpacity(0.3),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(
+                    color: effectiveAccentColor.withOpacity(
+                      _isHovering ? 0.5 : 0.2,
+                    ),
+                    width: 1.5,
+                  ),
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    gradient: gradient,
+                  ),
+                  child: Semantics(
+                    label: '${widget.title} metric card',
+                    value: widget.value,
+                    hint:
+                        'Shows the ${widget.title} metric with value ${widget.value}',
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              if (widget.icon != null) ...[
+                                Icon(
+                                  widget.icon,
+                                  color: effectiveAccentColor,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                              ],
+                              Expanded(
+                                child: Text(
+                                  widget.title,
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    color: colorScheme.onSurface.withOpacity(
+                                      0.8,
+                                    ),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                      widget.value,
+                                      style: theme.textTheme.headlineSmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                            color: theme.colorScheme.onSurface,
+                                          ),
+                                    )
+                                    .animate(
+                                      onPlay:
+                                          (controller) => controller.repeat(),
+                                    )
+                                    .shimmer(
+                                      duration: 2.seconds,
+                                      color: effectiveAccentColor.withOpacity(
+                                        0.3,
+                                      ),
+                                    ),
+                              ),
+                              if (widget.showTrendIndicator)
+                                Icon(
+                                  widget.isPositive
+                                      ? Icons.trending_up_rounded
+                                      : Icons.trending_down_rounded,
+                                  color:
+                                      widget.isPositive
+                                          ? Colors.green[700]
+                                          : Colors.red[700],
+                                  size: 24,
+                                ).animate().scaleXY(
+                                  curve: Curves.easeOut,
+                                  duration: 600.ms,
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              )
+              .animate()
+              .fadeIn(duration: 400.ms)
+              .slideY(
+                begin: 0.2,
+                end: 0,
+                duration: 400.ms,
+                curve: Curves.easeOutQuad,
+              )
+              .then()
+              .shimmer(delay: 200.ms, duration: 1200.ms)
+              .then()
+              .animate(onPlay: (controller) => controller.repeat(reverse: true))
+              .scaleXY(
+                begin: 1,
+                end: 1.02,
+                duration: 3.seconds,
+                curve: Curves.easeInOut,
+              ),
+        ),
+      ),
+    );
+  }
+}
+
+================
+File: sales_page.dart
+================
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:responsive_framework/responsive_framework.dart';
+import 'utils.dart';
+class SalesPage extends StatefulWidget {
+  const SalesPage({super.key});
+  @override
+  State<SalesPage> createState() => _SalesPageState();
+}
+class _SalesPageState extends State<SalesPage> {
+  DateTime selectedDate = DateTime.now();
+  final _piecesSoldController = TextEditingController();
+  final _revenueController = TextEditingController();
+ final formKey = GlobalKey<FormState>();
+  final int pageSize = 20;
+  int currentPage = 1;
+  @override
+  void dispose() {
+    _piecesSoldController.dispose();
+    _revenueController.dispose();
+    super.dispose();
+  }
+  Future _saveSalesData() async {
+    if (!formKey.currentState!.validate()) return;
+    var piecesSold = int.parse(_piecesSoldController.text);
+    var totalRevenue = double.parse(_revenueController.text);
+    var avgPrice = totalRevenue / piecesSold;
+    if (avgPrice < 0.5 || avgPrice > 100050) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Average price per piece is outside reasonable range'),
+        ),
+      );
+      return;
+    }
+    var docId = selectedDate.toString().substring(0, 10);
+    await FirebaseFirestore.instance.collection('sales').doc(docId).set({
+      'date': selectedDate,
+      'piecesSold': piecesSold,
+      'totalRevenue': totalRevenue,
+    });
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Sales data saved')));
+    _piecesSoldController.clear();
+    _revenueController.clear();
+  }
+  @override
+  Widget build(BuildContext context) {
+    var avgPrice =
+        (_piecesSoldController.text.isNotEmpty &&
+                _revenueController.text.isNotEmpty &&
+                int.tryParse(_piecesSoldController.text) != null &&
+                double.tryParse(_revenueController.text) != null)
+            ? (double.parse(_revenueController.text) /
+                    int.parse(_piecesSoldController.text))
+                .toStringAsFixed(2)
+            : '0.00';
+    return Scaffold(
+      appBar: AppBar(title: Text('Sales')),
+      body: Padding(
+        padding: EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('Date: ${selectedDate.toString().substring(0, 10)}'),
+                IconButton(
+                  icon: Icon(Icons.calendar_today),
+                  onPressed: () async {
+                    var newDate = await showDatePicker(
+                      context: context,
+                      initialDate: selectedDate,
+                      firstDate: DateTime(2000),
+                      lastDate: DateTime(2100),
+                    );
+                    if (newDate != null) {
+                      setState(() {
+                        selectedDate = newDate;
+                      });
+                    }
+                  },
+                ),
+              ],
+            ),
+            Form(
+              key: formKey,
+              child: Column(
+                children: [
+                  TextFormField(
+                    controller: _piecesSoldController,
+                    decoration: InputDecoration(
+                      labelText: 'Chicken Pieces Sold',
+                    ),
+                    keyboardType: TextInputType.number,
+                    validator:
+                        (value) =>
+                            value!.isEmpty ||
+                                    int.tryParse(value) == null ||
+                                    int.parse(value) < 0
+                                ? 'Invalid number'
+                                : null,
+                    onChanged: debounced((value) => setState(() {})),
+                  ),
+                  TextFormField(
+                    controller: _revenueController,
+                    decoration: InputDecoration(labelText: 'Total Revenue'),
+                    keyboardType: TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    validator:
+                        (value) =>
+                            value!.isEmpty ||
+                                    double.tryParse(value) == null ||
+                                    double.parse(value) < 0
+                                ? 'Invalid number'
+                                : null,
+                    onChanged: debounced((value) => setState(() {})),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Average Price: $avgPrice',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: _saveSalesData,
+                    child: Text('Save'),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 32),
+            Text(
+              'Historical Sales Data',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            Expanded(
+              child: StreamBuilder(
+                stream:
+                    FirebaseFirestore.instance
+                        .collection('sales')
+                        .orderBy('date', descending: true)
+                        .limit(pageSize * currentPage)
+                        .snapshots(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return ShimmerWidget(
+                      child: Container(height: 300, color: Colors.grey[300]),
+                    );
+                  }
+                  var salesDocs = snapshot.data!.docs;
+                  return Column(
+                    children: [
+                      Expanded(
+                        child:
+                            ResponsiveBreakpoints.of(
+                                  context,
+                                ).smallerThan(DESKTOP)
+                                ? ListView.builder(
+                                  itemCount: salesDocs.length,
+                                  itemBuilder: (context, index) {
+                                    var data = salesDocs[index].data();
+                                    return ListTile(
+                                      title: Text(
+                                        'Date: ${data['date'].toDate().toString().substring(0, 10)}',
+                                      ),
+                                      subtitle: Text(
+                                        'Pieces Sold: ${data['piecesSold']}, Revenue: ${data['totalRevenue'].toStringAsFixed(2)}',
+                                      ),
+                                    );
+                                  },
+                                )
+                                : SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: DataTable(
+                                    columns: [
+                                      DataColumn(label: Text('Date')),
+                                      DataColumn(label: Text('Pieces Sold')),
+                                      DataColumn(label: Text('Total Revenue')),
+                                    ],
+                                    rows:
+                                        salesDocs.map((doc) {
+                                          var data = doc.data();
+                                          return DataRow(
+                                            cells: [
+                                              DataCell(
+                                                Text(
+                                                  data['date']
+                                                      .toDate()
+                                                      .toString()
+                                                      .substring(0, 10),
+                                                ),
+                                              ),
+                                              DataCell(
+                                                Text(
+                                                  data['piecesSold'].toString(),
+                                                ),
+                                              ),
+                                              DataCell(
+                                                Text(
+                                                  '${data['totalRevenue'].toStringAsFixed(2)}',
+                                                ),
+                                              ),
+                                            ],
+                                          );
+                                        }).toList(),
+                                  ),
+                                ),
+                      ),
+                      if (salesDocs.length >= pageSize * currentPage)
+                        ElevatedButton(
+                          onPressed: () => setState(() => currentPage++),
+                          child: Text('Load More'),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+================
+File: sidebar.dart
+================
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:responsive_framework/responsive_framework.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+class Sidebar extends StatefulWidget {
+  final String currentRoute;
+  const Sidebar({super.key, required this.currentRoute});
+  @override
+  _SidebarState createState() => _SidebarState();
+}
+class _SidebarState extends State<Sidebar> {
+  bool _isExpanded = true;
+  @override
+  Widget build(BuildContext context) {
+    final isMobile = ResponsiveBreakpoints.of(context).smallerThan(TABLET);
+    final isTablet = ResponsiveBreakpoints.of(context).equals(TABLET);
+    if (isMobile) return SizedBox.shrink();
+    return AnimatedContainer(
+      duration: Duration(milliseconds: 300),
+      width: _isExpanded ? 240 : 80,
+      color: Color(0xFFFAFAFA),
+      child: Column(
+        children: [
+          if (isTablet)
+            Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  if (_isExpanded)
+                    Text(
+                      'Menu',
+                      style: Theme.of(context).textTheme.titleLarge,
+                      semanticsLabel: 'Menu Header',
+                    ),
+                  IconButton(
+                    icon: Icon(_isExpanded ? Icons.menu_open : Icons.menu),
+                    tooltip: _isExpanded ? 'Collapse Menu' : 'Expand Menu',
+                    onPressed: () => setState(() => _isExpanded = !_isExpanded),
+                  ),
+                ],
+              ),
+            )
+          else
+            DrawerHeader(
+              child: Text(
+                'Fried Chicken Cost',
+                style: Theme.of(context).textTheme.titleLarge,
+                semanticsLabel: 'Application Title',
+              ),
+            ),
+          Expanded(
+            child: ListView(
+              children: [
+                _buildNavItem(context, Icons.dashboard, 'Dashboard', '/dashboard'),
+                _buildNavItem(context, Icons.inventory, 'Inventory', '/inventory'),
+                _buildNavItem(context, Icons.sell, 'Sales', '/sales'),
+                _buildNavItem(context, Icons.analytics, 'Analysis', '/analysis'),
+                _buildNavItem(context, Icons.food_bank, 'Ingredient Management', '/ingredients'),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: Icon(Icons.person),
+            title: _isExpanded
+                ? Text(FirebaseAuth.instance.currentUser?.email ?? 'User')
+                : null,
+            subtitle: _isExpanded ? Text('Profile') : null,
+            onTap: () {
+              showModalBottomSheet(
+                context: context,
+                builder: (context) => _buildProfileMenu(context),
+              );
+            },
+          ).animate().fadeIn(duration: 300.ms),
+        ],
+      ),
+    );
+  }
+  Widget _buildNavItem(BuildContext context, IconData icon, String title, String route) {
+    final isSelected = widget.currentRoute == route;
+    return ListTile(
+      leading: Icon(
+        icon,
+        color: isSelected ? Color(0xFF2E7D32) : Color(0xFF757575),
+        semanticLabel: title,
+      ),
+      title: _isExpanded ? Text(title) : null,
+      selected: isSelected,
+      selectedTileColor: Color(0xFF2E7D32).withOpacity(0.1),
+      onTap: () {
+        Navigator.pushReplacementNamed(context, route);
+      },
+      focusColor: Color(0xFF2E7D32).withOpacity(0.2),
+      hoverColor: Color(0xFF2E7D32).withOpacity(0.1),
+      contentPadding: EdgeInsets.symmetric(horizontal: 16.0),
+    ).animate().fadeIn(duration: 300.ms);
+  }
+  Widget _buildProfileMenu(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.all(16.0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: Icon(Icons.settings),
+            title: Text('Settings'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.pushNamed(context, '/settings');
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.logout),
+            title: Text('Logout'),
+            onTap: () async {
+              bool? confirm = await showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: Text('Confirm Logout'),
+                  content: Text('Are you sure you want to log out?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: Text('Logout'),
+                    ),
+                  ],
+                ),
+              );
+              if (confirm == true) {
+                await FirebaseAuth.instance.signOut();
+                Navigator.pop(context);
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+================
+File: utils.dart
+================
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'dart:async';
+Map<String, double> _ingredientsCache = {};
+Map<String, double> _recipeCache = {};
+Timer? _debounceTimer;
+Map<String, double> cachedIngredients() {
+  if (_ingredientsCache.isEmpty) {
+    FirebaseFirestore.instance.collection('ingredients').get().then((snapshot) {
+      _ingredientsCache = {
+        for (var doc in snapshot.docs)
+          doc['item']:
+              doc['unitCost'] is int
+                  ? (doc['unitCost'] as int).toDouble()
+                  : double.parse(doc['unitCost'].toString()),
+      };
+    });
+  }
+  return _ingredientsCache;
+}
+Map<String, double> cachedRecipes() {
+  if (_recipeCache.isEmpty) {
+    FirebaseFirestore.instance.collection('recipe_standards').get().then((
+      snapshot,
+    ) {
+      _recipeCache = {
+        for (var doc in snapshot.docs)
+          doc['item']: (doc['quantityPerPiece'] as num).toDouble(),
+      };
+    });
+  }
+  return _recipeCache;
+}
+void clearRecipeCache() {
+  _recipeCache = {};
+}
+Map<String, List<Map<String, dynamic>>> groupLogsByDate(List logs) {
+  var result = <String, List<Map<String, dynamic>>>{};
+  for (var doc in logs) {
+    var data = doc.data() as Map<String, dynamic>;
+    var date = (data['date'] as Timestamp).toDate().toString().substring(0, 10);
+    result[date] = result[date] ?? [];
+    result[date]!.add(data);
+  }
+  return result;
+}
+Map<String, List<Map<String, dynamic>>> groupLogsByItem(List logs) {
+  var result = <String, List<Map<String, dynamic>>>{};
+  for (var doc in logs) {
+    var data = doc.data() as Map<String, dynamic>;
+    var item = data['item'];
+    result[item] = result[item] ?? [];
+    result[item]!.add(data);
+  }
+  return result;
+}
+void Function(String) debounced(
+  void Function(String) callback, {
+  Duration duration = const Duration(milliseconds: 300),
+}) {
+  return (value) {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(duration, () => callback(value));
+  };
+}
+List _cachedRecommendations = [];
+List memoizedGenerateRecommendations({
+  required List<Map<String, dynamic>> inventoryLogs,
+  required Map<String, UsageData> usagePerPiece,
+  required Map<String, double> consumed,
+  required Map<String, double> ingredientCosts,
+  required Map<String, double> recipeStandards,
+  required double totalCost,
+  required double avgDailySales,
+}) {
+  if (_cachedRecommendations != null) {
+    return _cachedRecommendations;
+  }
+  List recommendations = [];
+  for (var log in inventoryLogs) {
+    double wasteRatio = log['discarded'] / (log['opening'] + log['received']);
+    if (wasteRatio > 0.05) {
+      double monthlySavings =
+          log['discarded'] * 0.5 * ingredientCosts[log['item']] * 30;
+      recommendations.add(
+        Recommendation(
+          title: "Reduce ${log['item']} waste",
+          details:
+              "Current waste: ${(wasteRatio * 100).toStringAsFixed(1)}%. Aim for 50% reduction. Savings: ${monthlySavings.toStringAsFixed(2)}/month",
+          savings: monthlySavings,
+          difficulty: "Medium",
+        ),
+      );
+    }
+  }
+  for (var entry in usagePerPiece.entries) {
+    double benchmark = recipeStandards[entry.key] ?? 0;
+    if (benchmark > 0 && entry.value.usagePerPiece > benchmark * 1.1) {
+      double excess = entry.value.usagePerPiece - benchmark;
+      double savingsPerMonth =
+          excess * avgDailySales * 30 * ingredientCosts[entry.key]!;
+      recommendations.add(
+        Recommendation(
+          title: "Optimize ${entry.key} usage",
+          details:
+              "Current: ${entry.value.usagePerPiece.toStringAsFixed(4)} per piece. Target: ${benchmark.toStringAsFixed(4)}. Savings: ${savingsPerMonth.toStringAsFixed(2)}/month",
+          savings: savingsPerMonth,
+          difficulty: "Low",
+        ),
+      );
+    }
+  }
+  for (var entry in consumed.entries) {
+    if (entry.value * ingredientCosts[entry.key]! > totalCost * 0.15) {
+      double monthlySavings =
+          entry.value * ingredientCosts[entry.key]! * 0.05 * 30;
+      recommendations.add(
+        Recommendation(
+          title: "Bulk purchase ${entry.key}",
+          details:
+              "Negotiate 5% discount for bulk purchases. Savings: ${monthlySavings.toStringAsFixed(2)}/month",
+          savings: monthlySavings,
+          difficulty: "Low",
+        ),
+      );
+    }
+  }
+  _cachedRecommendations = recommendations;
+  return recommendations;
+}
+class ShimmerWidget extends StatelessWidget {
+  final Widget child;
+  const ShimmerWidget({super.key, required this.child});
+  @override
+  Widget build(BuildContext context) {
+    return child.animate().shimmer(
+      duration: Duration(milliseconds: 1000),
+      color: Colors.grey[300],
+    );
+  }
+}
+class Recommendation {
+  String title;
+  String details;
+  double savings;
+  String difficulty;
+  Recommendation({
+    required this.title,
+    required this.details,
+    required this.savings,
+    required this.difficulty,
+  });
+}
+class UsageData {
+  double usagePerPiece;
+  double benchmark;
+  double deviation;
+  UsageData({
+    required this.usagePerPiece,
+    required this.benchmark,
+    required this.deviation,
+  });
+}
+
+
+
+================================================================
+End of Codebase
+================================================================

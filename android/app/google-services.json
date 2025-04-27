@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "38231863409",
+    "project_id": "friedchickencostapp",
+    "storage_bucket": "friedchickencostapp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:38231863409:android:94f3885a2e98013c1b6bd0",
+        "android_client_info": {
+          "package_name": "com.example.myapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCp9SDQo5O6LnUUg2KjAvyvqHdq3rJZcYU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
