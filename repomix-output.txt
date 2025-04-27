@@ -52,10 +52,8 @@ Additional Info:
 Directory Structure
 ================================================================
 analysis_page.dart
-app_drawer.dart
 app.dart
 auth_gate.dart
-bottom_navigation.dart
 currency_formatter.dart
 dashboard_page.dart
 firebase_options.dart
@@ -64,8 +62,9 @@ inventory_page.dart
 login_page.dart
 main.dart
 metric_card.dart
+navigation_shell.dart
 sales_page.dart
-sidebar.dart
+settings_page.dart
 utils.dart
 
 ================================================================
@@ -86,9 +85,9 @@ import 'utils.dart';
 class AnalysisPage extends StatefulWidget {
   const AnalysisPage({super.key});
   @override
-  _AnalysisPageState createState() => _AnalysisPageState();
+  State<AnalysisPage> createState() => _AnalysisPageState();
 }
-class _AnalysisPageState extends State {
+class _AnalysisPageState extends State<AnalysisPage> {
   DateTimeRange selectedRange = DateTimeRange(
     start: DateTime.now().subtract(Duration(days: 7)),
     end: DateTime.now(),
@@ -204,7 +203,7 @@ class _AnalysisPageState extends State {
     for (var entry in totalConsumed.entries) {
       var item = entry.key;
       var consumed = entry.value;
-      var piecesSold = metricsList.fold(0, (sum, m) => sum + m.piecesSold);
+      var piecesSold = metricsList.fold(0, (total, m) => total + m.piecesSold);
       var usagePerPiece = piecesSold > 0 ? consumed / piecesSold : 0.0;
       var benchmark = recipeMap[item] ?? 0;
       var deviation = benchmark > 0 ? (usagePerPiece / benchmark) - 1 : 0.0;
@@ -221,7 +220,7 @@ class _AnalysisPageState extends State {
       var received = invLogsByDate.values
           .expand((logs) => logs)
           .where((log) => log['item'] == item)
-          .fold(0.0, (sum, log) => sum + log['received']);
+          .fold(0.0, (total, log) => total + log['received']);
       var wastePercentage = received > 0 ? discarded / received : 0.0;
       var wasteCost = discarded * (ingredientsMap[item] ?? 0);
       waste[item] = WasteData(
@@ -241,10 +240,10 @@ class _AnalysisPageState extends State {
       consumed: totalConsumed,
       ingredientCosts: ingredientsMap,
       recipeStandards: recipeMap,
-      totalCost: metricsList.fold(0, (sum, m) => sum + m.totalCost.toInt()),
+      totalCost: metricsList.fold(0, (total, m) => total + m.totalCost.toInt()),
       avgDailySales:
           metricsList.isNotEmpty
-              ? metricsList.fold(0, (sum, m) => sum + m.piecesSold) /
+              ? metricsList.fold(0, (total, m) => total + m.piecesSold) /
                   metricsList.length
               : 0,
     );
@@ -259,11 +258,11 @@ class _AnalysisPageState extends State {
   }
   @override
   Widget build(BuildContext context) {
-    double totalCosts = metrics.fold(0, (sum, m) => sum + m.totalCost);
-    double totalRevenue = metrics.fold(0, (sum, m) => sum + m.totalRevenue);
+    double totalCosts = metrics.fold(0, (total, m) => total + m.totalCost);
+    double totalRevenue = metrics.fold(0, (total, m) => total + m.totalRevenue);
     int totalPiecesSold = metrics.fold(
       0,
-      (sum, m) => (sum + m.piecesSold).toInt(),
+      (total, m) => (total + m.piecesSold).toInt(),
     );
     double avgCostPerPiece =
         totalPiecesSold > 0 ? totalCosts / totalPiecesSold : 0;
@@ -315,14 +314,14 @@ class _AnalysisPageState extends State {
                     children: [
                       MetricCard(
                         title: 'Total Costs',
-                         value: CurrencyFormatter().format(totalCosts),
+                        value: CurrencyFormatter().format(totalCosts),
                         icon: Icons.money_off,
                         accentColor: Colors.indigo,
                         showTrendIndicator: false,
                       ),
                       MetricCard(
                         title: 'Total Revenue',
-                         value: CurrencyFormatter().format(totalRevenue),
+                        value: CurrencyFormatter().format(totalRevenue),
                         icon: Icons.attach_money,
                         accentColor: Colors.green[700],
                         showTrendIndicator: false,
@@ -605,17 +604,17 @@ class _AnalysisPageState extends State {
     );
   }
   List<PieChartSectionData> _buildPieChartSections() {
-    double totalCost = usageData.entries.fold(0.0, (sum, entry) {
-      return sum +
+    double totalCost = usageData.entries.fold(0.0, (total, entry) {
+      return total +
           entry.value.usagePerPiece *
-              metrics.fold(0, (sum, m) => sum + m.piecesSold) *
+              metrics.fold(0, (total, m) => total + m.piecesSold) *
               (ingredientsMap[entry.key] ?? 0);
     });
     return usageData.entries.map((entry) {
       String item = entry.key;
       double cost =
           entry.value.usagePerPiece *
-          metrics.fold(0, (sum, m) => sum + m.piecesSold) *
+          metrics.fold(0, (total, m) => total + m.piecesSold) *
           (ingredientsMap[item] ?? 0);
       double percentage = (cost / totalCost) * 100;
       Color sectionColor =
@@ -696,7 +695,7 @@ class _AnalysisPageState extends State {
               String item = sortedEntries[index].key;
               double cost =
                   sortedEntries[index].value.usagePerPiece *
-                  metrics.fold(0, (sum, m) => sum + m.piecesSold) *
+                  metrics.fold(0, (total, m) => total + m.piecesSold) *
                   (ingredientsMap[item] ?? 0);
               Color itemColor =
                   Colors.primaries[usageData.keys.toList().indexOf(item) %
@@ -722,9 +721,9 @@ class _AnalysisPageState extends State {
                           ),
                         ),
                         Text(
-  CurrencyFormatter().format(cost),
-  style: TextStyle(fontWeight: FontWeight.bold),
-),
+                          CurrencyFormatter().format(cost),
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
                       ],
                     ),
                   )
@@ -754,7 +753,7 @@ class _AnalysisPageState extends State {
       String item = entry.key;
       double cost =
           entry.value.usagePerPiece *
-          metrics.fold(0, (sum, m) => sum + m.piecesSold) *
+          metrics.fold(0, (total, m) => total + m.piecesSold) *
           (ingredientsMap[item] ?? 0);
       if (cost > topCost) {
         topCost = cost;
@@ -768,7 +767,9 @@ class _AnalysisPageState extends State {
     return Container(
       padding: EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        color: Theme.of(
+          context,
+        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -787,7 +788,7 @@ class _AnalysisPageState extends State {
                   icon: Icons.trending_up,
                   title: 'Top Cost Driver',
                   subtitle: topIngredient ?? 'N/A',
-                      value: topCost > 0 ? topCost.toUgx() : 'N/A',
+                  value: topCost > 0 ? topCost.toUgx() : 'N/A',
                 ),
               ),
               SizedBox(width: 16),
@@ -823,7 +824,7 @@ class _AnalysisPageState extends State {
         borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 2,
             offset: Offset(0, 1),
           ),
@@ -902,55 +903,10 @@ class Recommendation {
 }
 
 ================
-File: app_drawer.dart
-================
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
-class AppDrawer extends StatelessWidget {
-  const AppDrawer({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return Drawer(
-      child: ListView(
-        children: [
-          DrawerHeader(child: Text('Menu', style: TextStyle(fontSize: 24))),
-          ListTile(
-            title: Text('Dashboard'),
-            onTap: () => Navigator.pushReplacementNamed(context, '/dashboard'),
-          ),
-          ListTile(
-            title: Text('Inventory'),
-            onTap: () => Navigator.pushNamed(context, '/inventory'),
-          ),
-          ListTile(
-            title: Text('Ingredients'),
-            onTap: () => Navigator.pushNamed(context, '/ingredients'),
-          ),
-          ListTile(
-            title: Text('Sales'),
-            onTap: () => Navigator.pushNamed(context, '/sales'),
-          ),
-          ListTile(
-            title: Text('Analysis'),
-            onTap: () => Navigator.pushNamed(context, '/analysis'),
-          ),
-          ListTile(
-            title: Text('Logout'),
-            onTap: () async {
-              await FirebaseAuth.instance.signOut();
-              Navigator.pop(context);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-================
 File: app.dart
 ================
 import 'package:flutter/material.dart';
+import 'package:frier_cost/settings_page.dart';
 import 'package:responsive_framework/responsive_framework.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'analysis_page.dart';
@@ -1013,7 +969,7 @@ class FriedChickenCostApp extends StatelessWidget {
         ),
         navigationBarTheme: NavigationBarThemeData(
           backgroundColor: Colors.white,
-          indicatorColor: Color(0xFF2E7D32).withOpacity(0.1),
+          indicatorColor: Color(0xFF2E7D32).withValues(alpha:  0.1),
           labelTextStyle: WidgetStateProperty.all(
             GoogleFonts.poppins(fontSize: 12, color: Color(0xFF757575)),
           ),
@@ -1048,31 +1004,14 @@ class FriedChickenCostApp extends StatelessWidget {
     );
   }
 }
-class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Settings')),
-      body: Center(child: Text('Settings Page')),
-    );
-  }
-}
 
 ================
 File: auth_gate.dart
 ================
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:responsive_framework/responsive_framework.dart';
-import 'analysis_page.dart';
-import 'app.dart';
-import 'dashboard_page.dart';
-import 'ingredient_page.dart';
-import 'inventory_page.dart';
 import 'login_page.dart';
-import 'sales_page.dart';
-import 'sidebar.dart';
+import 'navigation_shell.dart';
 import 'utils.dart';
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
@@ -1097,101 +1036,8 @@ class AuthGate extends StatelessWidget {
         if (!snapshot.hasData) {
           return LoginPage();
         }
-        final currentRoute = ModalRoute.of(context)?.settings.name ?? '/dashboard';
-        return Scaffold(
-          body: Row(
-            children: [
-              if (!ResponsiveBreakpoints.of(context).smallerThan(TABLET))
-                Sidebar(currentRoute: currentRoute),
-              Expanded(
-                child: Navigator(
-                  onGenerateRoute: (settings) {
-                    Widget page;
-                    switch (settings.name) {
-                      case '/inventory':
-                        page = InventoryPage();
-                        break;
-                      case '/sales':
-                        page = SalesPage();
-                        break;
-                      case '/analysis':
-                        page = AnalysisPage();
-                        break;
-                      case '/ingredients':
-                        page = IngredientPage();
-                        break;
-                      case '/settings':
-                        page = SettingsPage();
-                        break;
-                      default:
-                        page = DashboardPage();
-                    }
-                    return MaterialPageRoute(
-                      builder: (context) => page,
-                      settings: settings,
-                    );
-                  },
-                  initialRoute: currentRoute,
-                ),
-              ),
-            ],
-          ),
-        );
+        return const NavigationShell();
       },
-    );
-  }
-}
-
-================
-File: bottom_navigation.dart
-================
-import 'package:flutter/material.dart';
-import 'package:responsive_framework/responsive_framework.dart';
-import 'auth_gate.dart';
-import 'dashboard_page.dart';
-import 'inventory_page.dart';
-import 'sales_page.dart';
-import 'analysis_page.dart';
-import 'ingredient_page.dart';
-class BottomNavigation extends StatefulWidget {
-  const BottomNavigation({super.key});
-  @override
-  _BottomNavigationState createState() => _BottomNavigationState();
-}
-class _BottomNavigationState extends State<BottomNavigation> {
-  int _selectedIndex = 0;
-  final List<Map<String, dynamic>> _pages = [
-    {'route': '/dashboard', 'widget': DashboardPage(), 'label': 'Dashboard', 'icon': Icons.dashboard},
-    {'route': '/inventory', 'widget': InventoryPage(), 'label': 'Inventory', 'icon': Icons.inventory},
-    {'route': '/sales', 'widget': SalesPage(), 'label': 'Sales', 'icon': Icons.sell},
-    {'route': '/analysis', 'widget': AnalysisPage(), 'label': 'Analysis', 'icon': Icons.analytics},
-    {'route': '/ingredients', 'widget': IngredientPage(), 'label': 'Ingredients', 'icon': Icons.food_bank},
-  ];
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-      Navigator.pushReplacementNamed(context, _pages[index]['route']);
-    });
-  }
-  @override
-  Widget build(BuildContext context) {
-    if (!ResponsiveBreakpoints.of(context).smallerThan(TABLET)) {
-      return AuthGate();
-    }
-    return Scaffold(
-      body: AuthGate(),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: _onItemTapped,
-        destinations: _pages
-            .map((page) => NavigationDestination(
-                  icon: Icon(page['icon'], semanticLabel: page['label']),
-                  selectedIcon: Icon(page['icon'], fill: 1.0),
-                  label: page['label'],
-                  tooltip: page['label'],
-                ))
-            .toList(),
-      ),
     );
   }
 }
@@ -1263,8 +1109,6 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:frier_cost/currency_formatter.dart';
 import 'package:frier_cost/metric_card.dart';
-import 'package:responsive_framework/responsive_framework.dart';
-import 'app_drawer.dart';
 import 'utils.dart';
 class DashboardPage extends StatelessWidget {
   const DashboardPage({super.key});
@@ -1272,13 +1116,8 @@ class DashboardPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('Dashboard')),
-      drawer:
-          ResponsiveBreakpoints.of(context).smallerThan(DESKTOP)
-              ? AppDrawer()
-              : null,
       body: Row(
         children: [
-          if (ResponsiveBreakpoints.of(context).largerThan(TABLET)) AppDrawer(),
           Expanded(
             child: StreamBuilder(
               stream:
@@ -1425,7 +1264,9 @@ class DashboardPage extends StatelessWidget {
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                     side: BorderSide(
-                                      color: Color(0xFFD32F2F).withValues(alpha:  0.3),
+                                      color: Color(
+                                        0xFFD32F2F,
+                                      ).withValues(alpha: 0.3),
                                       width: 1,
                                     ),
                                   ),
@@ -1491,12 +1332,14 @@ class DashboardPage extends StatelessWidget {
                           if (usageDeviations.isNotEmpty)
                             Card(
                                   elevation: 3,
-                                  color: Colors.orange[700]!.withValues(alpha:  0.08),
+                                  color: Colors.orange[700]!.withValues(
+                                    alpha: 0.08,
+                                  ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                     side: BorderSide(
-                                      color: Colors.orange[700]!.withValues(alpha:
-                                        0.3,
+                                      color: Colors.orange[700]!.withValues(
+                                        alpha: 0.3,
                                       ),
                                       width: 1,
                                     ),
@@ -1619,7 +1462,7 @@ class DashboardPage extends StatelessWidget {
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Theme.of(
                   context,
-                ).textTheme.bodyMedium?.color?.withValues(alpha:  0.7),
+                ).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
               ),
             ),
             SizedBox(height: 24),
@@ -1644,7 +1487,7 @@ class DashboardPage extends StatelessWidget {
                                       ? metrics[index].marginPerPiece
                                       : metrics[index].costPerPiece;
                               return LineTooltipItem(
-                                '$date: ${CurrencyFormatter().formatWithPrecision(value, 1) }',
+                                '$date: ${CurrencyFormatter().formatWithPrecision(value, 1)}',
                                 TextStyle(
                                   color:
                                       Theme.of(
@@ -1677,7 +1520,7 @@ class DashboardPage extends StatelessWidget {
                                 .toList(),
                         isCurved: true,
                         gradient: LinearGradient(
-                          colors: [color.withValues(alpha:  0.7), color],
+                          colors: [color.withValues(alpha: 0.7), color],
                         ),
                         barWidth: 4,
                         isStrokeCapRound: true,
@@ -1698,8 +1541,8 @@ class DashboardPage extends StatelessWidget {
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
                             colors: [
-                              color.withValues(alpha:  0.3),
-                              color.withValues(alpha:  0.0),
+                              color.withValues(alpha: 0.3),
+                              color.withValues(alpha: 0.0),
                             ],
                           ),
                         ),
@@ -1769,7 +1612,7 @@ class DashboardPage extends StatelessWidget {
                           (value) => FlLine(
                             color: Theme.of(
                               context,
-                            ).dividerColor.withValues(alpha:  0.3),
+                            ).dividerColor.withValues(alpha: 0.3),
                             strokeWidth: 1,
                             dashArray: [5, 5],
                           ),
@@ -1866,8 +1709,14 @@ class DashboardPage extends StatelessWidget {
     for (var entry in grouped.entries) {
       var item = entry.key;
       var logs = entry.value;
-      var totalDiscarded = logs.fold(0.0, (total, log) => total + log['discarded']);
-      var totalReceived = logs.fold(0.0, (total, log) => total + log['received']);
+      var totalDiscarded = logs.fold(
+        0.0,
+        (total, log) => total + log['discarded'],
+      );
+      var totalReceived = logs.fold(
+        0.0,
+        (total, log) => total + log['received'],
+      );
       var wasteRatio = totalReceived > 0 ? totalDiscarded / totalReceived : 0.0;
       if (wasteRatio > 0.05) result[item] = wasteRatio;
     }
@@ -1998,9 +1847,9 @@ import 'utils.dart';
 class IngredientPage extends StatefulWidget {
   const IngredientPage({super.key});
   @override
-  _IngredientPageState createState() => _IngredientPageState();
+  State<IngredientPage> createState() => _IngredientPageState();
 }
-class _IngredientPageState extends State with SingleTickerProviderStateMixin {
+class _IngredientPageState extends State<IngredientPage> with SingleTickerProviderStateMixin {
   final _ingredientFormKey = GlobalKey<FormState>();
   final _recipeFormKey = GlobalKey<FormState>();
   final _ingredientItemController = TextEditingController();
@@ -2068,9 +1917,11 @@ class _IngredientPageState extends State with SingleTickerProviderStateMixin {
       await FirebaseFirestore.instance.collection('ingredients').add(data);
     }
     _clearIngredientForm();
-    ScaffoldMessenger.of(
+    if (mounted) {
+      ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('Ingredient saved')));
+    }
   }
   Future _saveRecipeStandard() async {
     if (!_recipeFormKey.currentState!.validate()) {
@@ -2094,15 +1945,19 @@ class _IngredientPageState extends State with SingleTickerProviderStateMixin {
     }
     clearRecipeCache();
     _clearRecipeForm();
-    ScaffoldMessenger.of(
+    if (mounted) {
+      ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('Recipe standard saved')));
+    }
   }
   Future _deleteIngredient(String id) async {
     await FirebaseFirestore.instance.collection('ingredients').doc(id).delete();
-    ScaffoldMessenger.of(
+    if (mounted) {
+      ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('Ingredient deleted')));
+    }
   }
   Future _deleteRecipeStandard(String id) async {
     await FirebaseFirestore.instance
@@ -2110,9 +1965,11 @@ class _IngredientPageState extends State with SingleTickerProviderStateMixin {
         .doc(id)
         .delete();
     clearRecipeCache();
-    ScaffoldMessenger.of(
+    if (mounted) {
+      ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('Recipe standard deleted')));
+    }
   }
   void _clearIngredientForm() {
     setState(() {
@@ -2379,13 +2236,14 @@ class _IngredientPageState extends State with SingleTickerProviderStateMixin {
                             .orderBy('item')
                             .snapshots(),
                     builder: (context, snapshot) {
-                      if (!snapshot.hasData)
+                      if (!snapshot.hasData) {
                         return ShimmerWidget(
                           child: Container(
                             height: 300,
                             color: Colors.grey[300],
                           ),
                         );
+                      }
                       var recipes = snapshot.data!.docs;
                       return ResponsiveBreakpoints.of(
                             context,
@@ -2488,9 +2346,9 @@ import 'utils.dart';
 class InventoryPage extends StatefulWidget {
   const InventoryPage({super.key});
   @override
-  _InventoryPageState createState() => _InventoryPageState();
+  State<InventoryPage> createState() => _InventoryPageState();
 }
-class _InventoryPageState extends State {
+class _InventoryPageState extends State<InventoryPage> {
   DateTime selectedDate = DateTime.now();
   List inventoryLogs = [];
   final formKey = GlobalKey<FormState>();
@@ -2603,9 +2461,11 @@ class _InventoryPageState extends State {
       });
     }
     await batch.commit();
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Inventory saved')));
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Inventory saved')));
+    }
   }
   @override
   Widget build(BuildContext context) {
@@ -2652,19 +2512,28 @@ class _InventoryPageState extends State {
                               );
                             }
                             var log = inventoryLogs[index];
-var consumed = 0.0;
-try {
-  if (double.tryParse(log.openingController.text) != null &&
-      double.tryParse(log.receivedController.text) != null &&
-      double.tryParse(log.closingController.text) != null &&
-      double.tryParse(log.discardedController.text) != null) {
-    consumed = double.parse(log.openingController.text) +
-              double.parse(log.receivedController.text) -
-              double.parse(log.closingController.text) -
-              double.parse(log.discardedController.text);
-  }
-} catch (e) {
-}
+                            var consumed = 0.0;
+                            try {
+                              if (double.tryParse(log.openingController.text) !=
+                                      null &&
+                                  double.tryParse(
+                                        log.receivedController.text,
+                                      ) !=
+                                      null &&
+                                  double.tryParse(log.closingController.text) !=
+                                      null &&
+                                  double.tryParse(
+                                        log.discardedController.text,
+                                      ) !=
+                                      null) {
+                                consumed =
+                                    double.parse(log.openingController.text) +
+                                    double.parse(log.receivedController.text) -
+                                    double.parse(log.closingController.text) -
+                                    double.parse(log.discardedController.text);
+                              }
+                            } catch (e) {
+                            }
                             return Card(
                               elevation: 2,
                               child: Padding(
@@ -2951,15 +2820,11 @@ import 'package:flutter_animate/flutter_animate.dart';
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
   @override
-  _LoginPageState createState() => _LoginPageState();
+  State<LoginPage> createState() => _LoginPageState();
 }
 class _LoginPageState extends State<LoginPage> {
-  final _emailController = TextEditingController(
-    text: 'truthysys@gmail.com',
-  );
-  final _passwordController = TextEditingController(
-    text: '12345678',
-  );
+  final _emailController = TextEditingController(text: 'truthysys@gmail.com');
+  final _passwordController = TextEditingController(text: '12345678');
   Future<void> _login() async {
     try {
       await FirebaseAuth.instance.signInWithEmailAndPassword(
@@ -2967,7 +2832,11 @@ class _LoginPageState extends State<LoginPage> {
         password: _passwordController.text.trim(),
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login failed: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Login failed: $e')));
+      }
     }
   }
   @override
@@ -2979,7 +2848,10 @@ class _LoginPageState extends State<LoginPage> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text('Welcome', style: Theme.of(context).textTheme.headlineMedium),
+              Text(
+                'Welcome',
+                style: Theme.of(context).textTheme.headlineMedium,
+              ),
               SizedBox(height: 20),
               TextField(
                 controller: _emailController,
@@ -2992,10 +2864,7 @@ class _LoginPageState extends State<LoginPage> {
                 obscureText: true,
               ),
               SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _login,
-                child: Text('Login'),
-              ),
+              ElevatedButton(onPressed: _login, child: Text('Login')),
             ],
           ).animate().fadeIn(duration: 500.ms),
         ),
@@ -3013,9 +2882,7 @@ import 'package:frier_cost/firebase_options.dart';
 import 'app.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-   options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   runApp(FriedChickenCostApp());
 }
 
@@ -3076,8 +2943,8 @@ class _MetricCardState extends State<MetricCard>
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
       colors: [
-        effectiveAccentColor.withOpacity(0.05),
-        effectiveAccentColor.withOpacity(0.15),
+        effectiveAccentColor.withValues(alpha:  0.05),
+        effectiveAccentColor.withValues(alpha:  0.15),
       ],
     );
     return MouseRegion(
@@ -3100,11 +2967,11 @@ class _MetricCardState extends State<MetricCard>
           width: 200,
           child: Card(
                 elevation: _isHovering ? 8 : 2,
-                shadowColor: effectiveAccentColor.withOpacity(0.3),
+                shadowColor: effectiveAccentColor.withValues(alpha:  0.3),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                   side: BorderSide(
-                    color: effectiveAccentColor.withOpacity(
+                    color: effectiveAccentColor.withValues( alpha:
                       _isHovering ? 0.5 : 0.2,
                     ),
                     width: 1.5,
@@ -3139,7 +3006,7 @@ class _MetricCardState extends State<MetricCard>
                                 child: Text(
                                   widget.title,
                                   style: theme.textTheme.titleMedium?.copyWith(
-                                    color: colorScheme.onSurface.withOpacity(
+                                    color: colorScheme.onSurface.withValues(alpha:
                                       0.8,
                                     ),
                                     fontWeight: FontWeight.w500,
@@ -3168,7 +3035,7 @@ class _MetricCardState extends State<MetricCard>
                                     )
                                     .shimmer(
                                       duration: 2.seconds,
-                                      color: effectiveAccentColor.withOpacity(
+                                      color: effectiveAccentColor.withValues(alpha:
                                         0.3,
                                       ),
                                     ),
@@ -3220,10 +3087,115 @@ class _MetricCardState extends State<MetricCard>
 }
 
 ================
+File: navigation_shell.dart
+================
+import 'package:flutter/material.dart';
+import 'package:responsive_framework/responsive_framework.dart';
+import 'analysis_page.dart';
+import 'dashboard_page.dart';
+import 'ingredient_page.dart';
+import 'inventory_page.dart';
+import 'sales_page.dart';
+class NavigationShell extends StatefulWidget {
+  const NavigationShell({super.key});
+  @override
+  State<NavigationShell> createState() => _NavigationShellState();
+}
+class _NavigationShellState extends State<NavigationShell> {
+  int _currentIndex = 0;
+  final List<_NavItem> _items = [
+    _NavItem(label: 'Dashboard', icon: Icons.dashboard, page: DashboardPage()),
+    _NavItem(label: 'Inventory', icon: Icons.inventory, page: InventoryPage()),
+    _NavItem(label: 'Sales', icon: Icons.sell, page: SalesPage()),
+    _NavItem(label: 'Analysis', icon: Icons.analytics, page: AnalysisPage()),
+    _NavItem(
+      label: 'Ingredients',
+      icon: Icons.food_bank,
+      page: IngredientPage(),
+    ),
+  ];
+  void _onSelect(int index) {
+    setState(() => _currentIndex = index);
+  }
+  @override
+  Widget build(BuildContext context) {
+    final isDesktop = !ResponsiveBreakpoints.of(context).smallerThan(TABLET);
+    return FocusTraversalGroup(
+      policy: WidgetOrderTraversalPolicy(),
+      child: Scaffold(
+        body: Row(
+          children: [
+            if (isDesktop)
+              NavigationRail(
+                selectedIndex: _currentIndex,
+                onDestinationSelected: _onSelect,
+                labelType: NavigationRailLabelType.selected,
+                leading: Semantics(
+                  label: 'Main menu',
+                  child: IconButton(icon: Icon(Icons.menu), onPressed: () {}),
+                ),
+                destinations:
+                    _items
+                        .map(
+                          (item) => NavigationRailDestination(
+                            icon: Semantics(
+                              label: item.label,
+                              child: Icon(item.icon),
+                            ),
+                            selectedIcon: Icon(item.icon, size: 28),
+                            label: Text(item.label),
+                          ),
+                        )
+                        .toList(),
+              ),
+            Expanded(child: _items[_currentIndex].page),
+          ],
+        ),
+        bottomNavigationBar:
+            !isDesktop
+                ? Semantics(
+                  container: true,
+                  label: 'Bottom navigation',
+                  child: BottomNavigationBar(
+                    currentIndex: _currentIndex,
+                    onTap: _onSelect,
+                    items:
+                        _items
+                            .map(
+                              (item) => BottomNavigationBarItem(
+                                icon: Semantics(
+                                  label: item.label,
+                                  child: Icon(item.icon),
+                                ),
+                                label: item.label,
+                              ),
+                            )
+                            .toList(),
+                    type: BottomNavigationBarType.fixed,
+                    selectedFontSize: 12,
+                    unselectedFontSize: 12,
+                    showUnselectedLabels: true,
+                    selectedItemColor: Theme.of(context).colorScheme.primary,
+                  ),
+                )
+                : null,
+      ),
+    );
+  }
+}
+class _NavItem {
+  final String label;
+  final IconData icon;
+  final Widget page;
+  const _NavItem({required this.label, required this.icon, required this.page});
+}
+
+================
 File: sales_page.dart
 ================
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:frier_cost/currency_formatter.dart';
 import 'package:responsive_framework/responsive_framework.dart';
 import 'utils.dart';
 class SalesPage extends StatefulWidget {
@@ -3235,7 +3207,7 @@ class _SalesPageState extends State<SalesPage> {
   DateTime selectedDate = DateTime.now();
   final _piecesSoldController = TextEditingController();
   final _revenueController = TextEditingController();
- final formKey = GlobalKey<FormState>();
+  final formKey = GlobalKey<FormState>();
   final int pageSize = 20;
   int currentPage = 1;
   @override
@@ -3263,9 +3235,11 @@ class _SalesPageState extends State<SalesPage> {
       'piecesSold': piecesSold,
       'totalRevenue': totalRevenue,
     });
-    ScaffoldMessenger.of(
+    if (mounted) {
+      ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('Sales data saved')));
+    }
     _piecesSoldController.clear();
     _revenueController.clear();
   }
@@ -3276,9 +3250,11 @@ class _SalesPageState extends State<SalesPage> {
                 _revenueController.text.isNotEmpty &&
                 int.tryParse(_piecesSoldController.text) != null &&
                 double.tryParse(_revenueController.text) != null)
-            ? (double.parse(_revenueController.text) /
-                    int.parse(_piecesSoldController.text))
-                .toStringAsFixed(2)
+            ? CurrencyFormatter().formatWithPrecision(
+              (double.parse(_revenueController.text) /
+                  int.parse(_piecesSoldController.text)),
+              2,
+            )
             : '0.00';
     return Scaffold(
       appBar: AppBar(title: Text('Sales')),
@@ -3391,7 +3367,7 @@ class _SalesPageState extends State<SalesPage> {
                                         'Date: ${data['date'].toDate().toString().substring(0, 10)}',
                                       ),
                                       subtitle: Text(
-                                        'Pieces Sold: ${data['piecesSold']}, Revenue: ${data['totalRevenue'].toStringAsFixed(2)}',
+                                        'Pieces Sold: ${data['piecesSold']}, Revenue: ${CurrencyFormatter().format(data['totalRevenue'])}',
                                       ),
                                     );
                                   },
@@ -3451,149 +3427,16 @@ class _SalesPageState extends State<SalesPage> {
 }
 
 ================
-File: sidebar.dart
+File: settings_page.dart
 ================
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:responsive_framework/responsive_framework.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-class Sidebar extends StatefulWidget {
-  final String currentRoute;
-  const Sidebar({super.key, required this.currentRoute});
-  @override
-  _SidebarState createState() => _SidebarState();
-}
-class _SidebarState extends State<Sidebar> {
-  bool _isExpanded = true;
+class SettingsPage extends StatelessWidget {
+  const SettingsPage({super.key});
   @override
   Widget build(BuildContext context) {
-    final isMobile = ResponsiveBreakpoints.of(context).smallerThan(TABLET);
-    final isTablet = ResponsiveBreakpoints.of(context).equals(TABLET);
-    if (isMobile) return SizedBox.shrink();
-    return AnimatedContainer(
-      duration: Duration(milliseconds: 300),
-      width: _isExpanded ? 240 : 80,
-      color: Color(0xFFFAFAFA),
-      child: Column(
-        children: [
-          if (isTablet)
-            Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  if (_isExpanded)
-                    Text(
-                      'Menu',
-                      style: Theme.of(context).textTheme.titleLarge,
-                      semanticsLabel: 'Menu Header',
-                    ),
-                  IconButton(
-                    icon: Icon(_isExpanded ? Icons.menu_open : Icons.menu),
-                    tooltip: _isExpanded ? 'Collapse Menu' : 'Expand Menu',
-                    onPressed: () => setState(() => _isExpanded = !_isExpanded),
-                  ),
-                ],
-              ),
-            )
-          else
-            DrawerHeader(
-              child: Text(
-                'Fried Chicken Cost',
-                style: Theme.of(context).textTheme.titleLarge,
-                semanticsLabel: 'Application Title',
-              ),
-            ),
-          Expanded(
-            child: ListView(
-              children: [
-                _buildNavItem(context, Icons.dashboard, 'Dashboard', '/dashboard'),
-                _buildNavItem(context, Icons.inventory, 'Inventory', '/inventory'),
-                _buildNavItem(context, Icons.sell, 'Sales', '/sales'),
-                _buildNavItem(context, Icons.analytics, 'Analysis', '/analysis'),
-                _buildNavItem(context, Icons.food_bank, 'Ingredient Management', '/ingredients'),
-              ],
-            ),
-          ),
-          ListTile(
-            leading: Icon(Icons.person),
-            title: _isExpanded
-                ? Text(FirebaseAuth.instance.currentUser?.email ?? 'User')
-                : null,
-            subtitle: _isExpanded ? Text('Profile') : null,
-            onTap: () {
-              showModalBottomSheet(
-                context: context,
-                builder: (context) => _buildProfileMenu(context),
-              );
-            },
-          ).animate().fadeIn(duration: 300.ms),
-        ],
-      ),
-    );
-  }
-  Widget _buildNavItem(BuildContext context, IconData icon, String title, String route) {
-    final isSelected = widget.currentRoute == route;
-    return ListTile(
-      leading: Icon(
-        icon,
-        color: isSelected ? Color(0xFF2E7D32) : Color(0xFF757575),
-        semanticLabel: title,
-      ),
-      title: _isExpanded ? Text(title) : null,
-      selected: isSelected,
-      selectedTileColor: Color(0xFF2E7D32).withOpacity(0.1),
-      onTap: () {
-        Navigator.pushReplacementNamed(context, route);
-      },
-      focusColor: Color(0xFF2E7D32).withOpacity(0.2),
-      hoverColor: Color(0xFF2E7D32).withOpacity(0.1),
-      contentPadding: EdgeInsets.symmetric(horizontal: 16.0),
-    ).animate().fadeIn(duration: 300.ms);
-  }
-  Widget _buildProfileMenu(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.all(16.0),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: Icon(Icons.settings),
-            title: Text('Settings'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.pushNamed(context, '/settings');
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.logout),
-            title: Text('Logout'),
-            onTap: () async {
-              bool? confirm = await showDialog(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: Text('Confirm Logout'),
-                  content: Text('Are you sure you want to log out?'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: Text('Cancel'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: Text('Logout'),
-                    ),
-                  ],
-                ),
-              );
-              if (confirm == true) {
-                await FirebaseAuth.instance.signOut();
-                Navigator.pop(context);
-              }
-            },
-          ),
-        ],
-      ),
+    return Scaffold(
+      appBar: AppBar(title: Text('Settings')),
+      body: Center(child: Text('Settings Page')),
     );
   }
 }
@@ -3677,7 +3520,7 @@ List memoizedGenerateRecommendations({
   required double totalCost,
   required double avgDailySales,
 }) {
-  if (_cachedRecommendations != null) {
+  if (_cachedRecommendations.isNotEmpty) {
     return _cachedRecommendations;
   }
   List recommendations = [];
