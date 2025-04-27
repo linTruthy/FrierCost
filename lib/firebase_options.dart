@@ -3,6 +3,7 @@
 import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// Default [FirebaseOptions] for use with your Firebase apps.
 ///
@@ -49,21 +50,21 @@ class DefaultFirebaseOptions {
     }
   }
 
-  static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyAJdCK5sXjvS96G5jPJ_NiG1cGekZsflQY',
-    appId: '1:38231863409:web:ba1ca81bef16a4281b6bd0',
-    messagingSenderId: '38231863409',
-    projectId: 'friedchickencostapp',
-    authDomain: 'friedchickencostapp.firebaseapp.com',
-    storageBucket: 'friedchickencostapp.firebasestorage.app',
-    measurementId: 'G-3RW1HMPVXV',
+  static final FirebaseOptions web = FirebaseOptions(
+    apiKey: dotenv.env['FIREBASE_API_KEY_WEB'] ?? 'default_api_key',
+    appId: dotenv.env['FIREBASE_APP_ID_WEB'] ?? 'default_app_id',
+    messagingSenderId: dotenv.env['FIREBASE_MESSAGING_SENDER_ID'] ?? 'default_messaging_sender_id',
+    projectId:dotenv.env['FIREBASE_PROJECT_ID'] ?? 'default_project_id',
+    authDomain: dotenv.env['FIREBASE_AUTH_DOMAIN'] ?? 'default_auth_domain',
+    storageBucket: dotenv.env['FIREBASE_STORAGE_BUCKET'] ?? 'default_storage_bucket',
+    measurementId: dotenv.env['FIREBASE_MEASUREMENT_ID'] ?? 'default_measurement_id',
   );
 
-  static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyCp9SDQo5O6LnUUg2KjAvyvqHdq3rJZcYU',
-    appId: '1:38231863409:android:94f3885a2e98013c1b6bd0',
-    messagingSenderId: '38231863409',
-    projectId: 'friedchickencostapp',
-    storageBucket: 'friedchickencostapp.firebasestorage.app',
+  static final FirebaseOptions android = FirebaseOptions(
+    apiKey: dotenv.env['FIREBASE_API_KEY_AND'] ?? 'default_api_key',
+    appId: dotenv.env['FIREBASE_APP_ID_AND'] ?? 'default_app_id',
+    messagingSenderId: dotenv.env['FIREBASE_MESSAGING_SENDER_ID'] ?? 'default_messaging_sender_id',
+    projectId: dotenv.env['FIREBASE_PROJECT_ID'] ?? 'default_project_id',
+    storageBucket: dotenv.env['FIREBASE_STORAGE_BUCKET'] ?? 'default_storage_bucket',
   );
 }

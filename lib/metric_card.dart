@@ -9,6 +9,10 @@ class MetricCard extends StatefulWidget {
   final bool isPositive;
   final bool showTrendIndicator;
 
+  final Duration animationDuration;
+
+  final String semanticsLabel;
+
   const MetricCard({
     super.key,
     required this.title,
@@ -17,6 +21,8 @@ class MetricCard extends StatefulWidget {
     this.accentColor,
     this.isPositive = true,
     this.showTrendIndicator = false,
+    this.animationDuration = const Duration(milliseconds: 400),
+    this.semanticsLabel = 'Metric Card',
   });
 
   @override
@@ -33,7 +39,7 @@ class _MetricCardState extends State<MetricCard>
   void initState() {
     super.initState();
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 200),
+      duration: Duration(milliseconds: 200),
       vsync: this,
     );
     _scaleAnimation = Tween<double>(
@@ -63,8 +69,8 @@ class _MetricCardState extends State<MetricCard>
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
       colors: [
-        effectiveAccentColor.withValues(alpha:  0.05),
-        effectiveAccentColor.withValues(alpha:  0.15),
+        effectiveAccentColor.withValues(alpha: 0.05),
+        effectiveAccentColor.withValues(alpha: 0.15),
       ],
     );
 
@@ -88,12 +94,12 @@ class _MetricCardState extends State<MetricCard>
           width: 200,
           child: Card(
                 elevation: _isHovering ? 8 : 2,
-                shadowColor: effectiveAccentColor.withValues(alpha:  0.3),
+                shadowColor: effectiveAccentColor.withValues(alpha: 0.3),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                   side: BorderSide(
-                    color: effectiveAccentColor.withValues( alpha: 
-                      _isHovering ? 0.5 : 0.2,
+                    color: effectiveAccentColor.withValues(
+                      alpha: _isHovering ? 0.5 : 0.2,
                     ),
                     width: 1.5,
                   ),
@@ -127,8 +133,8 @@ class _MetricCardState extends State<MetricCard>
                                 child: Text(
                                   widget.title,
                                   style: theme.textTheme.titleMedium?.copyWith(
-                                    color: colorScheme.onSurface.withValues(alpha: 
-                                      0.8,
+                                    color: colorScheme.onSurface.withValues(
+                                      alpha: 0.8,
                                     ),
                                     fontWeight: FontWeight.w500,
                                   ),
@@ -156,8 +162,8 @@ class _MetricCardState extends State<MetricCard>
                                     )
                                     .shimmer(
                                       duration: 2.seconds,
-                                      color: effectiveAccentColor.withValues(alpha: 
-                                        0.3,
+                                      color: effectiveAccentColor.withValues(
+                                        alpha: 0.3,
                                       ),
                                     ),
                               ),
@@ -184,11 +190,11 @@ class _MetricCardState extends State<MetricCard>
                 ),
               )
               .animate()
-              .fadeIn(duration: 400.ms)
+              .fadeIn(duration: widget.animationDuration)
               .slideY(
                 begin: 0.2,
                 end: 0,
-                duration: 400.ms,
+                duration: widget.animationDuration,
                 curve: Curves.easeOutQuad,
               )
               .then()
