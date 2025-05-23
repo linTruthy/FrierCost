@@ -46,6 +46,13 @@ dependencies:
   shared_preferences: ^2.5.3
   flutter_riverpod: ^2.6.1
   flutter_dotenv: ^5.2.1
+ 
+  flutter_keyboard_visibility: ^6.0.0
+ 
+  google_sign_in: ^6.3.0
+  rive: ^0.13.20
+  sign_in_with_apple: ^7.0.1
+  flutter_svg: ^2.1.0
 
 dev_dependencies:
   flutter_test:
@@ -62,4 +69,9 @@ flutter:
 
   assets:
     - assets/.env
+    - assets/images/bg_pattern_dark.jpg
+    - assets/images/bg_pattern_light.jpg
+    - assets/icons/apple.svg
+    - assets/icons/google.svg
+    - assets/animations/login_character.riv
   

@@ -51,13 +51,13 @@ class DefaultFirebaseOptions {
   }
 
   static final FirebaseOptions web = FirebaseOptions(
-    apiKey: dotenv.env['FIREBASE_API_KEY_WEB'] ?? 'default_api_key',
-    appId: dotenv.env['FIREBASE_APP_ID_WEB'] ?? 'default_app_id',
-    messagingSenderId: dotenv.env['FIREBASE_MESSAGING_SENDER_ID'] ?? 'default_messaging_sender_id',
-    projectId:dotenv.env['FIREBASE_PROJECT_ID'] ?? 'default_project_id',
-    authDomain: dotenv.env['FIREBASE_AUTH_DOMAIN'] ?? 'default_auth_domain',
-    storageBucket: dotenv.env['FIREBASE_STORAGE_BUCKET'] ?? 'default_storage_bucket',
-    measurementId: dotenv.env['FIREBASE_MEASUREMENT_ID'] ?? 'default_measurement_id',
+    apiKey:'AIzaSyAJdCK5sXjvS96G5jPJ_NiG1cGekZsflQY',
+    appId: '1:38231863409:web:ba1ca81bef16a4281b6bd0',
+    messagingSenderId: '38231863409',
+    projectId:'friedchickencostapp',
+    authDomain: 'friedchickencostapp.firebaseapp.com',
+    storageBucket: 'friedchickencostapp.firebasestorage.app',
+    measurementId: 'G-3RW1HMPVXV',
   );
 
   static final FirebaseOptions android = FirebaseOptions(

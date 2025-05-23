@@ -1484,8 +1484,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
                   color: color,
                   height: height,
                 ),
-         //   if (metrics.isNotEmpty)
-          //    _buildChartAnalysis(context, metrics, isMargin),
+            //   if (metrics.isNotEmpty)
+            //    _buildChartAnalysis(context, metrics, isMargin),
           ],
         ),
       ),
@@ -1852,7 +1852,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
       ],
     );
   }
-   // Helper methods for chart configuration
+
+  // Helper methods for chart configuration
   double _getMinY(List metrics, bool isMargin) {
     if (metrics.isEmpty) return 0;
     double min = double.infinity;
@@ -1875,6 +1876,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
     }
     return max * 1.1; // Set max Y to 110% of maximum value
   }
+
   double _getGridInterval(List metrics, bool isMargin) {
     double range = _getMaxY(metrics, isMargin) - _getMinY(metrics, isMargin);
     if (range <= 5) return 1;
@@ -1882,56 +1884,55 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
     if (range <= 20) return 4;
     return 5;
   }
-
 }
 
-  List _calculateMetrics(List salesDocs, List invLogs) {
-    var ingredientsMap = cachedIngredients();
-    var invLogsByDate = groupLogsByDate(invLogs);
-    List metrics = [];
-    for (var salesDoc in salesDocs) {
-      var salesData = salesDoc.data() as Map<String, dynamic>;
-      var date = (salesData['date'] as Timestamp).toDate().toString().substring(
-        0,
-        10,
-      );
-      var piecesSold = salesData['piecesSold'];
-      var totalRevenue =
-          salesData['totalRevenue'] is int
-              ? (salesData['totalRevenue'] as int).toDouble()
-              : double.parse(salesData['totalRevenue'].toString());
-      if (invLogsByDate.containsKey(date)) {
-        var logs = invLogsByDate[date]!;
-        double totalCost = 0;
-        for (var log in logs) {
-          var item = log['item'];
-          var consumed =
-              log['opening'] +
-              log['received'] -
-              log['closing'] -
-              log['discarded'];
-          var unitCost = ingredientsMap[item] ?? 5.0;
-          totalCost += consumed * unitCost;
-        }
-        var costPerPiece = piecesSold > 0 ? totalCost / piecesSold : 0.0;
-        var sellingPrice = totalRevenue / piecesSold;
-        var margin = sellingPrice - costPerPiece;
-        metrics.add(
-          DailyMetrics(
-            date: (salesData['date'] as Timestamp).toDate(),
-            costPerPiece: costPerPiece,
-            marginPerPiece: margin,
-            totalCost: totalCost,
-            totalRevenue: totalRevenue,
-            piecesSold: piecesSold,
-          ),
-        );
+List _calculateMetrics(List salesDocs, List invLogs) {
+  var ingredientsMap = cachedIngredients();
+  var invLogsByDate = groupLogsByDate(invLogs);
+  List metrics = [];
+  for (var salesDoc in salesDocs) {
+    var salesData = salesDoc.data() as Map<String, dynamic>;
+    var date = (salesData['date'] as Timestamp).toDate().toString().substring(
+      0,
+      10,
+    );
+    var piecesSold = salesData['piecesSold'];
+    var totalRevenue =
+        salesData['totalRevenue'] is int
+            ? (salesData['totalRevenue'] as int).toDouble()
+            : double.parse(salesData['totalRevenue'].toString());
+    if (invLogsByDate.containsKey(date)) {
+      var logs = invLogsByDate[date]!;
+      double totalCost = 0;
+      for (var log in logs) {
+        var item = log['item'];
+        var consumed =
+            log['opening'] +
+            log['received'] -
+            log['closing'] -
+            log['discarded'];
+        var unitCost = ingredientsMap[item] ?? 5.0;
+        totalCost += consumed * unitCost;
       }
+      var costPerPiece = piecesSold > 0 ? totalCost / piecesSold : 0.0;
+      var sellingPrice = totalRevenue / piecesSold;
+      var margin = sellingPrice - costPerPiece;
+      metrics.add(
+        DailyMetrics(
+          date: (salesData['date'] as Timestamp).toDate(),
+          costPerPiece: costPerPiece,
+          marginPerPiece: margin,
+          totalCost: totalCost,
+          totalRevenue: totalRevenue,
+          piecesSold: piecesSold,
+        ),
+      );
     }
-    return metrics;
   }
-  
-  class DailyMetrics {
+  return metrics;
+}
+
+class DailyMetrics {
   DateTime date;
   double costPerPiece;
   double marginPerPiece;
@@ -1949,73 +1950,68 @@ class _DashboardPageState extends ConsumerState<DashboardPage>
   });
 }
 
-  Map<String, double> _calculateHighWaste(List invLogs) {
-    var result = <String, double>{};
-    var grouped = groupLogsByItem(invLogs);
-    for (var entry in grouped.entries) {
-      var item = entry.key;
-      var logs = entry.value;
-      var totalDiscarded = logs.fold(
-        0.0,
-        (total, log) => total + log['discarded'],
+Map<String, double> _calculateHighWaste(List invLogs) {
+  var result = <String, double>{};
+  var grouped = groupLogsByItem(invLogs);
+  for (var entry in grouped.entries) {
+    var item = entry.key;
+    var logs = entry.value;
+    var totalDiscarded = logs.fold(
+      0.0,
+      (total, log) => total + log['discarded'],
+    );
+    var totalReceived = logs.fold(0.0, (total, log) => total + log['received']);
+    var wasteRatio = totalReceived > 0 ? totalDiscarded / totalReceived : 0.0;
+    if (wasteRatio > 0.05) result[item] = wasteRatio;
+  }
+  return result;
+}
+
+Map<String, double> _calculateUsageDeviations(List salesDocs, List invLogs) {
+  var recipeMap = cachedRecipes();
+  var groupedLogs = groupLogsByItem(invLogs);
+  var salesByDate = {
+    for (var doc in salesDocs)
+      (doc['date'] as Timestamp).toDate().toString().substring(0, 10):
+          doc['piecesSold'] as int,
+  };
+  var result = <String, double>{};
+  for (var entry in groupedLogs.entries) {
+    var item = entry.key;
+    var logs = entry.value;
+    double totalConsumed = logs.fold(
+      0.0,
+      (total, log) =>
+          total +
+          (log['opening'] +
+              log['received'] -
+              log['closing'] -
+              log['discarded']),
+    );
+    // Calculate total pieces sold for the dates corresponding to the logs
+    int totalPiecesSold = logs.fold(0, (total, log) {
+      var date = (log['date'] as Timestamp).toDate().toString().substring(
+        0,
+        10,
       );
-      var totalReceived = logs.fold(
-        0.0,
-        (total, log) => total + log['received'],
-      );
-      var wasteRatio = totalReceived > 0 ? totalDiscarded / totalReceived : 0.0;
-      if (wasteRatio > 0.05) result[item] = wasteRatio;
+      return total + (salesByDate[date] ?? 0);
+    });
+
+    double usagePerPiece =
+        totalPiecesSold > 0 ? totalConsumed / totalPiecesSold : 0;
+    double benchmark = recipeMap[item] ?? 0;
+    if (benchmark > 0 && usagePerPiece > benchmark * 1.1) {
+      double deviation = (usagePerPiece / benchmark) - 1;
+      result[item] = deviation;
     }
-    return result;
   }
+  return result;
+}
 
-  Map<String, double> _calculateUsageDeviations(List salesDocs, List invLogs) {
-    var recipeMap = cachedRecipes();
-    var groupedLogs = groupLogsByItem(invLogs);
-    var salesByDate = {
-      for (var doc in salesDocs)
-        (doc['date'] as Timestamp).toDate().toString().substring(0, 10):
-            doc['piecesSold'] as int,
-    };
-    var result = <String, double>{};
-    for (var entry in groupedLogs.entries) {
-      var item = entry.key;
-      var logs = entry.value;
-      double totalConsumed = logs.fold(
-        0.0,
-        (total, log) =>
-            total +
-            (log['opening'] +
-                log['received'] -
-                log['closing'] -
-                log['discarded']),
-      );
-      // Calculate total pieces sold for the dates corresponding to the logs
-      int totalPiecesSold = logs.fold(0, (total, log) {
-        var date = (log['date'] as Timestamp).toDate().toString().substring(
-          0,
-          10,
-        );
-        return total + (salesByDate[date] ?? 0);
-      });
-
-      double usagePerPiece =
-          totalPiecesSold > 0 ? totalConsumed / totalPiecesSold : 0;
-      double benchmark = recipeMap[item] ?? 0;
-      if (benchmark > 0 && usagePerPiece > benchmark * 1.1) {
-        double deviation = (usagePerPiece / benchmark) - 1;
-        result[item] = deviation;
-      }
-    }
-    return result;
-  }
-
-
-
-  double _calculateWeeklyRevenue(List metrics) {
-    if (metrics.isEmpty) return 0;
-    return metrics.fold(0.0, (total, metric) => total + metric.totalRevenue);
-  }
+double _calculateWeeklyRevenue(List metrics) {
+  if (metrics.isEmpty) return 0;
+  return metrics.fold(0.0, (total, metric) => total + metric.totalRevenue);
+}
   
   // Widget _buildChartAnalysis(BuildContext context, List metrics, bool isMargin) {
   //   if (metrics.length < 2) return SizedBox.shrink();
